@@ -1,0 +1,133 @@
+请继续接手 `/Users/jarvis/Documents/VideoToDoc` 项目。
+
+先阅读以下文件，按顺序理解当前状态：
+
+1. `/Users/jarvis/Documents/VideoToDoc/VideoToDoc 编程计划 V2.md`
+2. `/Users/jarvis/Documents/VideoToDoc/skills/videotodoc/SKILL.md`
+3. `/Users/jarvis/Documents/VideoToDoc/README.md`
+
+当前项目目标：
+
+把课程/讲座视频转成可编辑讲义。最终应通过 Codex Skill 触发，Agent 自动完成：
+
+视频课程
+-> 检查依赖
+-> 生成完整候选截图序列
+-> 图像/OCR 去重，保留每页最后一张
+-> 提取音频
+-> ASR 转录讲稿
+-> 截图与讲稿按时间轴对齐
+-> 生成 Word / Markdown / Mermaid
+-> 通过 lark-cli 发布到飞书文档
+
+已完成并验证的内容：
+
+1. 项目骨架和 CLI 已实现。
+2. 截图流程已按真实视频调通。
+3. RapidOCR 已安装到项目虚拟环境 `.venv`，模型已下载成功。
+4. 截图去重逻辑已改为三段式：
+   - 明显重复：直接合并，保留后一张。
+   - 明显不同：直接保留。
+   - 不确定：才调用 OCR 比较文本。
+5. 示例视频已验证：
+   - 候选图：77 张
+   - 最终截图：10 张
+   - OCR 检查：4 组
+   - OCR 判定重复：1 组
+   - OCR 判定保留：3 组
+
+
+当前关键命令：
+
+```bash
+cd /Users/jarvis/Documents/VideoToDoc
+
+PYTHONPATH=src .venv/bin/python -m videotodoc.cli process \
+  "Videos/01_第一讲 期权实盘应该避开的“七大误区”.mp4" \
+  --asr mock \
+  --capture-mode audit \
+  --scene-threshold 0.02 \
+  --fallback-interval-sec 15 \
+  --hash-threshold 8 \
+  --ocr-dedupe \
+  --force-rebuild slides \
+  --force-rebuild align
+```
+
+当前截图结果位置：
+
+```text
+/Users/jarvis/Documents/VideoToDoc/runs/01_第一讲_期权实盘应该避开的_七大误区_08258178726c/selected_slides_audit_0.02_8_15_False
+```
+
+质量报告位置：
+
+```text
+/Users/jarvis/Documents/VideoToDoc/runs/01_第一讲_期权实盘应该避开的_七大误区_08258178726c/quality_report.md
+```
+
+请不要重复踩这些坑：
+
+1. 不要默认用 5 秒截图间隔。当前默认应为 15 秒，可由用户通过 `--fallback-interval-sec` 调整。
+2. 不要对所有候选图全量 OCR。只对图像判断“不确定”的相邻图调用 OCR。
+3. 不要只用 dHash 判断白底 PPT 是否重复。白底 PPT 很容易误合并不同页。
+4. 候选审计图可以快速 seek，但最终入选页要精确 seek。
+5. 当前 `--asr mock` 只是测试流程，不是真实转录。
+6. 不要让用户在聊天里粘贴 API key。飞书默认走本机 `lark-cli` 登录态。
+7. 不要使用 Ollama。本项目中智能整理由执行 Skill 的 Agent 完成。
+8. 不要批量删除文件或目录。
+
+下一步请继续完成：
+
+1. 安装并验证 `mlx-whisper`：
+
+```bash
+.venv/bin/python -m pip install mlx-whisper
+```
+
+2. 用 `mlx-whisper` 对示例视频跑真实 ASR：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m videotodoc.cli process \
+  "Videos/01_第一讲 期权实盘应该避开的“七大误区”.mp4" \
+  --asr mlx-whisper \
+  --capture-mode audit \
+  --scene-threshold 0.02 \
+  --fallback-interval-sec 15 \
+  --hash-threshold 8 \
+  --ocr-dedupe \
+  --force-rebuild asr \
+  --force-rebuild align
+```
+
+3. 检查真实 `transcript.json` 是否生成，确认不是 mock。
+4. 检查 `sections.json`、`draft.docx`、`draft.md`、`mindmap.mmd` 是否用真实讲稿重新生成。
+5. 抽查图文对齐质量，必要时用 `--sync-offset-ms` 修正时间偏移。
+6. 飞书发布先 dry-run：
+
+```bash
+PYTHONPATH=src .venv/bin/python -m videotodoc.cli publish runs/<run_dir> --target feishu --dry-run
+```
+
+7. 如果本机 `lark-cli` 未登录，提示用户先执行：
+
+```bash
+lark-cli config init
+lark-cli auth login --recommend
+```
+
+8. 最后把项目内 Skill 安装到全局目录：
+
+```text
+/Users/jarvis/.codex/skills/videotodoc
+```
+
+注意：如果需要写入全局 Skill 目录，先请求权限，不要绕过沙箱。
+
+验证命令：
+
+```bash
+PYTHONPATH=src python3 -m unittest discover -s tests -v
+PYTHONPATH=src python3 -m compileall src skills/videotodoc/scripts
+```
+

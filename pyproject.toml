@@ -1,0 +1,33 @@
+[project]
+name = "videotodoc"
+version = "0.1.0"
+description = "Turn lecture videos into editable image-text lecture notes."
+requires-python = ">=3.11"
+dependencies = [
+  "Pillow>=10.0",
+  "python-docx>=1.1",
+]
+
+[project.optional-dependencies]
+asr = [
+  "mlx-whisper>=0.4",
+  "faster-whisper>=1.0",
+]
+mlx = [
+  "mlx-whisper>=0.4",
+]
+ocr = [
+  "rapidocr>=3.8",
+  "onnxruntime>=1.20",
+]
+test = []
+
+[project.scripts]
+videotodoc = "videotodoc.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
