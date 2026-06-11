@@ -85,30 +85,36 @@ def _is_bilibili_url(url: str) -> bool:
 # ── 依赖检查 & 诊断 ─────────────────────────────────────────
 
 
-def check_dependencies(fatal: bool = True) -> list[tuple[str, str, bool]]:
-    """检查依赖，返回 [(名称, 安装命令, 是否可用)] 列表"""
+def check_dependencies(fatal: bool = True, check_asr: bool = False) -> list[tuple[str, str, bool]]:
+    """检查依赖，返回 [(名称, 安装命令, 是否可用)] 列表
+    
+    Args:
+        fatal: 缺少必需依赖时是否退出
+        check_asr: 是否检查 ASR 依赖（mlx-whisper）
+    """
     results = []
 
-    # yt-dlp
+    # yt-dlp（必需）
     try:
-        run_cmd(["yt-dlp", "--version"])
+        import yt_dlp  # noqa: F401
         results.append(("yt-dlp", "pip install yt-dlp pycryptodomex", True))
-    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+    except ModuleNotFoundError:
         results.append(("yt-dlp", "pip install yt-dlp pycryptodomex", False))
 
-    # ffmpeg
+    # ffmpeg（字幕获取时可选，ASR 时必需）
     try:
         run_cmd(["ffmpeg", "-version"])
         results.append(("ffmpeg", "brew install ffmpeg (macOS)", True))
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         results.append(("ffmpeg", "brew install ffmpeg (macOS)", False))
 
-    # mlx_whisper
-    try:
-        import mlx_whisper  # noqa: F401
-        results.append(("mlx-whisper", "pip install mlx-whisper", True))
-    except ModuleNotFoundError:
-        results.append(("mlx-whisper", "pip install mlx-whisper", False))
+    # mlx_whisper（仅在需要 ASR 时检查）
+    if check_asr:
+        try:
+            import mlx_whisper  # noqa: F401
+            results.append(("mlx-whisper", "pip install mlx-whisper", True))
+        except ModuleNotFoundError:
+            results.append(("mlx-whisper", "pip install mlx-whisper", False))
 
     # curl_cffi (可选，用于 B站 TLS 指纹绕过)
     try:
@@ -117,10 +123,11 @@ def check_dependencies(fatal: bool = True) -> list[tuple[str, str, bool]]:
     except ModuleNotFoundError:
         results.append(("curl_cffi", "pip install curl_cffi (可选，用于B站)", False))
 
-    if fatal and any(not ok for _, _, ok in results[:3]):
+    # 必需依赖：yt-dlp
+    if fatal and not results[0][2]:
         print("❌ 缺少必需依赖：\n")
         for name, cmd, ok in results:
-            if not ok:
+            if not ok and name in ["yt-dlp"]:
                 print(f"  {name}: {cmd}")
         sys.exit(1)
 
@@ -130,7 +137,7 @@ def check_dependencies(fatal: bool = True) -> list[tuple[str, str, bool]]:
 def cmd_doctor() -> None:
     """诊断依赖和配置状态"""
     print("🔍 video-to-notes 诊断\n")
-    results = check_dependencies(fatal=False)
+    results = check_dependencies(fatal=False, check_asr=True)
     for name, cmd, ok in results:
         status = "✅" if ok else "❌"
         print(f"  {status} {name}")
@@ -483,7 +490,7 @@ def cleanup(run_dir: Path, mode: str) -> set[str]:
 
 def cmd_process(args: argparse.Namespace) -> None:
     """主流程：URL → 字幕优先 → ASR fallback → 输出"""
-    check_dependencies()
+    check_dependencies(fatal=True, check_asr=args.no_subtitle)  # 强制 ASR 时需要检查 ASR 依赖
 
     url = args.url
     base_dir = Path(args.output_dir)
@@ -542,10 +549,7 @@ def main():
     parser = argparse.ArgumentParser(
         description="video-to-notes：视频链接 → 字幕/转录 → Markdown"
     )
-    subparsers = parser.add_subparsers(dest="command")
-
-    # 默认模式：直接传 URL
-    parser.add_argument("url", nargs="?", help="视频网页链接")
+    parser.add_argument("url", nargs="?", help="视频网页链接或 doctor 命令")
     parser.add_argument("--output-dir", default="./runs", help="产物目录（默认 ./runs）")
     parser.add_argument("--asr-model", default="mlx-community/whisper-large-v3-turbo", help="mlx-whisper 模型")
     parser.add_argument("--language", default="zh", help="语言（默认 zh）")
@@ -553,12 +557,9 @@ def main():
     parser.add_argument("--cleanup", default=None, choices=["all", "transcript-only"], help="清理模式")
     parser.add_argument("--no-subtitle", action="store_true", help="跳过字幕，强制使用 ASR")
 
-    # doctor 子命令
-    subparsers.add_parser("doctor", help="诊断依赖和配置")
-
     args = parser.parse_args()
 
-    if args.command == "doctor":
+    if args.url == "doctor":
         cmd_doctor()
         return
 
