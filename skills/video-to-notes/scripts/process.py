@@ -298,6 +298,38 @@ def _parse_subtitle_file(path: Path) -> str | None:
 # ── 步骤 ③：下载视频（仅音频） ────────────────────────────────
 
 
+
+def _download_with_you_get(url: str, run_dir: Path) -> Path | None:
+    """使用 you-get 作为 B站下载的 fallback"""
+    try:
+        print("  🔄 尝试使用 you-get...")
+        result = subprocess.run(
+            ["you-get", "--format=dash-flv360-AVC", "-o", str(run_dir), url],
+            capture_output=True, text=True, timeout=120
+        )
+        if result.returncode != 0:
+            print(f"  ⚠️  you-get 失败：{result.stderr[:100]}")
+            return None
+        
+        # 找到下载的视频文件
+        for f in run_dir.iterdir():
+            if f.suffix == ".mp4":
+                # 提取音频
+                audio_path = run_dir / "audio.wav"
+                subprocess.run(
+                    ["ffmpeg", "-i", str(f), "-vn", "-acodec", "pcm_s16le", "-y", str(audio_path)],
+                    capture_output=True, check=True
+                )
+                # 删除视频文件节省空间
+                f.unlink()
+                print(f"  ✅ you-get 下载成功")
+                return audio_path
+        return None
+    except Exception as e:
+        print(f"  ⚠️  you-get 异常：{e}")
+        return None
+
+
 def download_audio(url: str, run_dir: Path, proxy: str | None = None) -> Path:
     """用 yt-dlp 下载最佳音频流（参考 tscribe：只下音频，不下视频）"""
     effective_proxy = _get_proxy_for_url(url, proxy)
@@ -346,9 +378,17 @@ def download_audio(url: str, run_dir: Path, proxy: str | None = None) -> Path:
     }
 
     print(f"\n📥 下载音频...")
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=True)
-        title = info.get("title", "video")
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            title = info.get("title", "video")
+    except yt_dlp.utils.DownloadError as e:
+        # B站 412 错误时尝试 you-get fallback
+        if _is_bilibili_url(url) and "412" in str(e):
+            audio_path = _download_with_you_get(url, run_dir)
+            if audio_path:
+                return audio_path
+        raise
 
     # 找到音频文件
     audio_path = run_dir / "audio.wav"
