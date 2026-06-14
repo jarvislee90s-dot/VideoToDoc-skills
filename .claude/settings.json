@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh auth *)",
+      "Edit(/.claude/skills/video-summary/**)",
+      "Edit(/.claude/skills/video-to-slides/**)",
+      "Edit(/.claude/skills/feishu-markdown-publish/**)",
+      "Bash(git pull *)",
+      "Bash(git stash *)"
+    ]
+  }
+}
