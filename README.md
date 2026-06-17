@@ -8,9 +8,9 @@ VideoToDoc 是一个面向课程、讲座、培训视频的本地工作流：提
 
 ## 🎓 项目概览
 
-![HTML Hero 概览](preview1.png)
-![HTML Hero 概览](preview2.png)
-![HTML Hero 概览](preview3.png)
+![§1 创意 / §2 目标用户 / §3 价值与意义](preview1.png)
+![§4 三步工作流(抽屉展开)](preview2.png)
+![§5 看效果(真实跑批产物)](preview3.png)
 
 ### 三步把任意视频变成团队知识
 
