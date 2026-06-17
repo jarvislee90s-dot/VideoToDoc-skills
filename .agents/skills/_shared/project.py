@@ -15,7 +15,7 @@ def find_project_dir(explicit: str | Path | None = None, anchor: Path | None = N
     4. anchor 及其父目录
     5. 脚本所在目录及其父目录
 
-    判断标准：存在 .claude/skills/video-to-slides/scripts/videotodoc/cli.py
+    判断标准：存在 .agents/skills/video-to-slides/scripts/videotodoc/cli.py
     """
     candidates: list[Path] = []
     if explicit:
@@ -35,10 +35,10 @@ def find_project_dir(explicit: str | Path | None = None, anchor: Path | None = N
             continue
         seen.add(path)
         for root in (path, *path.parents):
-            # 检查 .claude/skills 内嵌结构
-            if (root / ".claude" / "skills" / "video-to-slides" / "scripts" / "videotodoc" / "cli.py").exists():
+            # 检查 .agents/skills 内嵌结构
+            if (root / ".agents" / "skills" / "video-to-slides" / "scripts" / "videotodoc" / "cli.py").exists():
                 return root
-            if allow_runs_only and (root / "runs").is_dir() and not (root / ".claude").is_dir():
+            if allow_runs_only and (root / "runs").is_dir() and not (root / ".agents").is_dir():
                 return root
     raise SystemExit(
         "未找到项目根目录；"
