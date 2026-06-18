@@ -48,6 +48,7 @@ class Settings:
     terms: dict[str, str] = field(default_factory=dict)
     max_periods_per_segment: int = 3
     min_segment_chars: int = 30
+    max_segment_chars: int = 400
 
 
 def load_dotenv(path: Path) -> None:
