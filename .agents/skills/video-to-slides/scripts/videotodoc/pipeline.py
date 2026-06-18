@@ -5,7 +5,7 @@ from pathlib import Path
 
 from .align import align_sections
 from .asr import transcribe_audio
-from .audio import extract_audio
+from .audio import extract_audio, probe_duration_ms
 from .config import Settings
 from .document import (
     ensure_semantic_markdown,
@@ -15,13 +15,201 @@ from .document import (
     render_original_markdown,
 )
 from .io import read_json, write_json
-from .models import ProcessResult, Section, SlideSet, to_plain_dict
+from .models import ProcessResult, Section, Slide, SlideSet, to_plain_dict
 from .mindmap import render_mindmap_and_refresh_docs
 from .quality import write_quality_report
-from .slides import deduplicate_slides, detect_slides, trim_candidates_by_transcript
+from .slides import (
+    cross_segment_dedupe,
+    deduplicate_slides,
+    detect_slides,
+    finalize_segment_slides,
+    slides_from_dict,
+    trim_candidates_by_transcript,
+)
+from .segment import capture_interval_for_duration, generate_pending_segments
 from .sync import estimate_sync_offset_ms
 from datetime import datetime
 from .utils import ensure_file, file_md5, slugify
+
+
+def capture_video(
+    video_path: Path,
+    runs_dir: Path,
+    settings: Settings,
+    force_rebuild: set[str] | None = None,
+) -> dict:
+    """capture 阶段：提取音频 + ASR + 时长密度截图 + 生成分段草案。"""
+    ensure_file(video_path, "视频文件")
+    force_rebuild = force_rebuild or set()
+
+    slug = slugify(video_path.stem)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = runs_dir / f"{slug}_{ts}"
+    cache_dir = run_dir / "cache"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    audio_profile = _audio_profile_name(settings)
+    backend_slug = slugify(settings.asr_backend)
+    model_slug = slugify(settings.asr_model)
+    video_hash = file_md5(video_path)[:12]
+    audio_path = cache_dir / f"{video_hash}_{audio_profile}.wav"
+    transcript_path = cache_dir / f"{video_hash}_{backend_slug}_{model_slug}.transcript.json"
+
+    # 时长密度函数决定截图间隔
+    duration_ms = probe_duration_ms(video_path)
+    duration_sec = duration_ms / 1000
+    settings.fallback_interval_sec = capture_interval_for_duration(duration_sec)
+
+    slides_slug = slugify(
+        f"{settings.capture_mode}_{settings.scene_threshold}_{settings.hash_threshold}_"
+        f"{settings.fallback_interval_sec}_{settings.keep_all_candidates}"
+    )
+    slides_dir = run_dir / f"slides_{slides_slug}"
+    slides_path = cache_dir / f"{video_hash}_{slides_slug}.candidates.json"
+
+    # 步骤 1-2：音频 + ASR
+    audio = extract_audio(video_path, audio_path, settings, force=_stage_forced(force_rebuild, "audio"))
+    if settings.transcript_path:
+        from .models import Transcript, TranscriptSegment
+        data = read_json(Path(settings.transcript_path))
+        segs = [TranscriptSegment(start_ms=s.get("start_ms", s.get("start", 0)),
+                                  end_ms=s.get("end_ms", s.get("end", 0)),
+                                  text=s.get("text", ""))
+                for s in (data if isinstance(data, list) else data.get("segments", []))]
+        transcript = Transcript(backend="reused", language=settings.language, segments=segs)
+        print(f"  ♻️  复用已有转录（{len(segs)} 段）")
+    else:
+        transcript = transcribe_audio(audio, transcript_path, settings, force=_stage_forced(force_rebuild, "asr"))
+
+    # 步骤 3：截图（skip_dedupe，只生成候选）
+    candidates = detect_slides(video_path, slides_dir, slides_path, settings,
+                               force=_stage_forced(force_rebuild, "slides"), skip_dedupe=True)
+
+    # 步骤 4：生成分段草案
+    pending = generate_pending_segments(candidates, transcript, duration_sec,
+                                        max_segment_chars=settings.max_segment_chars,
+                                        min_segment_chars=settings.min_segment_chars)
+    pending["video_title"] = video_path.stem
+    pending["video_path"] = str(video_path.resolve())
+    pending_path = run_dir / "pending_segments.json"
+    write_json(pending_path, pending)
+
+    return {
+        "run_dir": str(run_dir.resolve()),
+        "pending_segments_path": str(pending_path.resolve()),
+        "candidates_count": len(candidates.slides),
+    }
+
+
+
+def finalize_video(
+    run_dir: Path,
+    settings: Settings,
+) -> dict:
+    """finalize 阶段：按 confirmed_segments.json 去重 + 补图 + 生成产物。"""
+    confirmed_path = run_dir / "confirmed_segments.json"
+    if not confirmed_path.exists():
+        raise SystemExit(
+            f"❌ confirmed_segments.json 不存在：{confirmed_path}\n"
+            f"   请先运行: videotodoc review-segments {run_dir}"
+        )
+
+    confirmed = read_json(confirmed_path)
+    segments = confirmed.get("segments", [])
+    if not segments:
+        raise SystemExit("❌ confirmed_segments.json 无分段数据")
+
+    video_path = Path(confirmed.get("video_path", ""))
+
+    # 找候选图缓存
+    cache_dir = run_dir / "cache"
+    candidates_files = list(cache_dir.glob("*.candidates.json"))
+    if not candidates_files:
+        raise SystemExit("❌ 找不到候选图缓存，请重新运行 capture")
+    candidates = slides_from_dict(read_json(candidates_files[0]))
+
+    # 找 transcript 缓存
+    transcript_files = list(cache_dir.glob("*.transcript.json"))
+    if transcript_files:
+        from .models import Transcript, TranscriptSegment
+        tdata = read_json(transcript_files[0])
+        tsegs = [TranscriptSegment(start_ms=s.get("start_ms", s.get("start", 0)),
+                                   end_ms=s.get("end_ms", s.get("end", 0)),
+                                   text=s.get("text", ""))
+                 for s in (tdata if isinstance(tdata, list) else tdata.get("segments", []))]
+        transcript = Transcript(backend="reused", language=settings.language, segments=tsegs)
+    else:
+        raise SystemExit("❌ 找不到转录缓存，请重新运行 capture")
+
+    # 按 confirmed 分段处理
+    fill_dir = run_dir / "fill_slides"
+    fill_dir.mkdir(parents=True, exist_ok=True)
+
+    all_slides: list[list[Slide]] = []
+    for seg in segments:
+        if seg["suggested_action"] == "merge":
+            continue  # 合并段跳过，内容归到 merge_into
+        seg_slides = finalize_segment_slides(seg, candidates, video_path, fill_dir, settings)
+        all_slides.append(seg_slides)
+
+    # 跨段边界去重
+    cross_segment_dedupe(all_slides, settings)
+
+    # 物化截图
+    selected_dir = run_dir / "selected_slides_finalized"
+    selected_dir.mkdir(parents=True, exist_ok=True)
+    global_index = 0
+    flat_slides: list[Slide] = []
+    for seg_slides in all_slides:
+        for slide in seg_slides:
+            global_index += 1
+            target = selected_dir / f"{global_index:04d}.png"
+            source = Path(slide.image_path)
+            if source.exists():
+                shutil.copy2(source, target)
+            flat_slides.append(Slide(
+                slide_index=global_index, image_path=str(target),
+                start_ms=slide.start_ms, end_ms=slide.end_ms,
+                capture_ms=slide.capture_ms, confidence=slide.confidence,
+                hash=slide.hash, edge_density=slide.edge_density,
+            ))
+
+    slideset = SlideSet(slides=flat_slides)
+
+    # 图文对齐
+    sync_offset_ms = settings.sync_offset_ms or 0
+    sections = align_sections(slideset, transcript, sync_offset_ms)
+
+    # 生成产物
+    slug = confirmed.get("video_title", run_dir.stem)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    markdown_path = run_dir / f"{slug}_讲义_{ts}.md"
+    compact_markdown_path = run_dir / f"{slug}_讲义_紧凑版_{ts}.md"
+    semantic_markdown_path = run_dir / f"{slug}_讲义_整理版_{ts}.md"
+    docx_path = run_dir / f"{slug}_讲义_{ts}.docx"
+    semantic_docx_path = run_dir / f"{slug}_讲义_整理版_{ts}.docx"
+    mindmap_path = run_dir / f"{slug}_思维导图_{ts}.mmd"
+    mindmap_image_path = run_dir / f"{slug}_思维导图_{ts}.png"
+
+    mindmap = generate_mindmap(slug, sections, mindmap_path, settings)
+    if not mindmap_image_path.exists():
+        temp_mindmap = run_dir / "mindmap.mmd"
+        if not temp_mindmap.exists():
+            temp_mindmap.symlink_to(mindmap_path.name)
+        render_mindmap_and_refresh_docs(run_dir, mindmap_path=mindmap_path, image_path=mindmap_image_path)
+
+    mm_image = mindmap_image_path if mindmap_image_path.exists() else None
+    render_original_markdown(slug, sections, markdown_path)
+    render_compact_markdown(slug, sections, compact_markdown_path, mm_image)
+    ensure_semantic_markdown(slug, sections, semantic_markdown_path, mm_image)
+    markdown_to_docx(compact_markdown_path, docx_path)
+    markdown_to_docx(semantic_markdown_path, semantic_docx_path)
+
+    return {
+        "run_dir": str(run_dir.resolve()),
+        "selected_slides_count": len(flat_slides),
+    }
 
 
 def process_video(

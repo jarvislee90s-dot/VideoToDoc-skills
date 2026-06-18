@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .config import Settings, load_config
 from .mindmap import render_mindmap_and_refresh_docs
-from .pipeline import process_video
+from .pipeline import capture_video, finalize_video, process_video
 from .utils import VideoToDocError
 
 
@@ -14,6 +14,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        if args.command == "capture":
+            return _capture(args)
+        if args.command == "review-segments":
+            return _review_segments(args)
+        if args.command == "finalize":
+            return _finalize(args)
         if args.command == "process":
             return _process(args)
         if args.command == "render-mindmap":
@@ -51,10 +57,91 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--transcript", type=Path, default=None,
                          help="已有转录文件路径（跳过 ASR）")
 
+    capture = subparsers.add_parser("capture", help="截图 + ASR + 生成分段草案")
+    capture.add_argument("video", type=Path)
+    capture.add_argument("--runs-dir", type=Path, default=Path("runs"))
+    capture.add_argument("--asr", dest="asr_backend")
+    capture.add_argument("--model", dest="asr_model")
+    capture.add_argument("--language")
+    capture.add_argument("--transcript", type=Path, default=None, help="已有转录文件路径")
+    capture.add_argument("--capture-mode", choices=["fast", "fine", "audit", "complete"])
+    capture.add_argument("--force-rebuild", action="append", default=[])
+
+    review = subparsers.add_parser("review-segments", help="审查分段草案，校验 confirmed 格式")
+    review.add_argument("run_dir", type=Path)
+    review.add_argument("--confirmed", type=Path, default=None,
+                        help="confirmed_segments.json 路径（默认 run_dir/confirmed_segments.json）")
+
+    finalize = subparsers.add_parser("finalize", help="按 confirmed 分段去重补图 + 生成产物")
+    finalize.add_argument("run_dir", type=Path)
+    finalize.add_argument("--capture-mode", choices=["fast", "fine", "audit", "complete"])
+    finalize.add_argument("--ocr-dedupe", action="store_true")
+    finalize.add_argument("--force-rebuild", action="append", default=[])
+
     mindmap = subparsers.add_parser("render-mindmap", help="渲染 mindmap.mmd 并刷新 Word")
     mindmap.add_argument("run_dir", type=Path)
 
     return parser
+
+
+def _review_segments(args: argparse.Namespace) -> int:
+    from .segment import validate_confirmed_segments
+    from .io import read_json
+
+    pending_path = args.run_dir / "pending_segments.json"
+    if not pending_path.exists():
+        print(f"❌ 分段草案不存在：{pending_path}", file=sys.stderr)
+        print("请先运行: videotodoc capture <video>", file=sys.stderr)
+        return 2
+
+    pending = read_json(pending_path)
+    print("📋 分段草案（pending_segments.json）")
+    print(f"   视频时长：{pending.get('duration_sec', '?')}s")
+    print(f"   截图间隔：{pending.get('capture_interval_sec', '?')}s")
+    print(f"   分段数：{len(pending.get('segments', []))}")
+    print()
+    for seg in pending.get("segments", []):
+        action = seg["suggested_action"]
+        merge_info = f" → {seg.get('merge_into', '')}" if action == "merge" else ""
+        print(f"  {seg['id']} [{action}{merge_info}] {seg['start_ms']//1000}s-{seg['end_ms']//1000}s "
+              f"({seg.get('char_count', '?')}字) {seg['label']}")
+
+    confirmed_path = args.confirmed or (args.run_dir / "confirmed_segments.json")
+    if confirmed_path.exists():
+        confirmed = read_json(confirmed_path)
+        if validate_confirmed_segments(confirmed):
+            print(f"\n✅ confirmed_segments.json 格式校验通过：{confirmed_path}")
+            print("请运行: videotodoc finalize <run_dir>")
+            return 0
+        else:
+            print(f"\n❌ confirmed_segments.json 格式校验失败，请检查", file=sys.stderr)
+            return 1
+    else:
+        print(f"\n📝 请编辑分段草案后保存为：{confirmed_path}")
+        print("   修改 suggested_action（keep/merge/split），merge 需带 merge_into，split 需带 split_at")
+        return 0
+
+
+def _finalize(args: argparse.Namespace) -> int:
+    settings = _settings_from_args(args)
+    result = finalize_video(args.run_dir, settings)
+    print("FINALIZE_DONE")
+    print(f"- run_dir: {result['run_dir']}")
+    print(f"- selected_slides_count: {result['selected_slides_count']}")
+    return 0
+
+
+def _capture(args: argparse.Namespace) -> int:
+    settings = _settings_from_args(args)
+    if getattr(args, "transcript", None):
+        settings.transcript_path = str(args.transcript)
+    result = capture_video(args.video, args.runs_dir, settings, set(args.force_rebuild))
+    print("CAPTURE_DONE")
+    print(f"- run_dir: {result['run_dir']}")
+    print(f"- pending_segments: {result['pending_segments_path']}")
+    print(f"- candidates: {result['candidates_count']}")
+    print("请 agent 审查分段草案后运行: videotodoc review-segments <run_dir>")
+    return 0
 
 
 def _process(args: argparse.Namespace) -> int:
@@ -92,7 +179,8 @@ def _render_mindmap(args: argparse.Namespace) -> int:
 
 
 def _settings_from_args(args: argparse.Namespace) -> Settings:
-    settings = load_config(args.config)
+    config_path = getattr(args, "config", None) or Path("config.yaml")
+    settings = load_config(config_path)
     for field in (
         "asr_backend",
         "asr_model",

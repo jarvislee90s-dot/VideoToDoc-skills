@@ -576,3 +576,99 @@ def _slide_overlaps_segment(slide: Slide, seg_start_ms: int, seg_end_ms: int) ->
     seg_end_ms 的截图归属于下一个 ASR 段。
     """
     return seg_start_ms <= slide.capture_ms < seg_end_ms
+
+
+def finalize_segment_slides(
+    segment: dict,
+    candidates: SlideSet,
+    video_path: Path,
+    output_dir: Path,
+    settings: Settings,
+) -> list[Slide]:
+    """对单个 segment 做段内去重 + 补图，返回最终截图列表。"""
+    seg_start = segment["start_ms"]
+    seg_end = segment["end_ms"]
+    slide_ids = set(segment.get("candidate_slide_ids", []))
+
+    # 取该 segment 的候选图
+    seg_candidates = [s for s in candidates.slides if s.slide_index in slide_ids]
+
+    # 段内去重（复用三段式逻辑，范围收敛到段内）
+    kept: list[Slide] = []
+    dedupe_stats = DedupeStats()
+    for slide in seg_candidates:
+        if kept and is_near_duplicate(
+            Path(slide.image_path), Path(kept[-1].image_path),
+            settings.hash_threshold, settings, dedupe_stats,
+        ):
+            # 重复：保留后一张（信息更完整）
+            kept[-1] = slide
+            continue
+        kept.append(slide)
+
+    # 补图 case 1：0 张图 → 段中点快速补一帧
+    if not kept:
+        mid_ms = (seg_start + seg_end) // 2
+        img_path = output_dir / f"fill_{segment['id']}_mid.png"
+        extract_frame(video_path, mid_ms, img_path, precise=False)
+        kept.append(Slide(
+            slide_index=0, image_path=str(img_path), start_ms=seg_start, end_ms=seg_end,
+            capture_ms=mid_ms, confidence=0.6, hash=f"{dhash(img_path):016x}",
+            edge_density=edge_density(img_path),
+        ))
+
+    # 补图 case 2：有图但存在无图覆盖区间 → 末尾时刻补一帧
+    if kept:
+        gap_start = seg_start
+        for s in sorted(kept, key=lambda x: x.capture_ms):
+            if s.capture_ms - gap_start > 5000:  # 无图区间 > 5s
+                fill_ms = s.capture_ms - 500  # 该区间末尾
+                img_path = output_dir / f"fill_{segment['id']}_{fill_ms}.png"
+                extract_frame(video_path, fill_ms, img_path, precise=False)
+                kept.append(Slide(
+                    slide_index=0, image_path=str(img_path), start_ms=gap_start,
+                    end_ms=s.capture_ms, capture_ms=fill_ms, confidence=0.6,
+                    hash=f"{dhash(img_path):016x}", edge_density=edge_density(img_path),
+                ))
+            gap_start = s.capture_ms
+        # 末尾无图区间
+        if seg_end - gap_start > 5000:
+            fill_ms = seg_end - 500
+            img_path = output_dir / f"fill_{segment['id']}_end.png"
+            extract_frame(video_path, fill_ms, img_path, precise=False)
+            kept.append(Slide(
+                slide_index=0, image_path=str(img_path), start_ms=gap_start, end_ms=seg_end,
+                capture_ms=fill_ms, confidence=0.6, hash=f"{dhash(img_path):016x}",
+                edge_density=edge_density(img_path),
+            ))
+
+    # 补图后重新跑一次段内去重
+    if len(kept) > 1:
+        re_kept: list[Slide] = [kept[0]]
+        for slide in kept[1:]:
+            if is_near_duplicate(
+                Path(slide.image_path), Path(re_kept[-1].image_path),
+                settings.hash_threshold, settings, DedupeStats(),
+            ):
+                continue
+            re_kept.append(slide)
+        kept = re_kept
+
+    # 重新编号
+    for i, s in enumerate(kept, start=1):
+        s.slide_index = i
+    return kept
+
+
+def cross_segment_dedupe(segments_slides: list[list[Slide]], settings: Settings) -> None:
+    """跨段边界去重：相邻段末帧与首帧重复则删后者。"""
+    for i in range(len(segments_slides) - 1):
+        if not segments_slides[i] or not segments_slides[i + 1]:
+            continue
+        last = segments_slides[i][-1]
+        first = segments_slides[i + 1][0]
+        if is_near_duplicate(
+            Path(first.image_path), Path(last.image_path),
+            settings.hash_threshold, settings, DedupeStats(),
+        ):
+            segments_slides[i + 1].pop(0)
