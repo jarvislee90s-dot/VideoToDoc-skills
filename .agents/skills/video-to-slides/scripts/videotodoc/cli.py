@@ -48,6 +48,8 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--different-hash-threshold", type=int)
     process.add_argument("--sync-offset-ms", type=int)
     process.add_argument("--force-rebuild", action="append", default=[], help="可重复传入：audio/asr/slides/align/all")
+    process.add_argument("--transcript", type=Path, default=None,
+                         help="已有转录文件路径（跳过 ASR）")
 
     mindmap = subparsers.add_parser("render-mindmap", help="渲染 mindmap.mmd 并刷新 Word")
     mindmap.add_argument("run_dir", type=Path)
@@ -112,6 +114,9 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         settings.keep_all_candidates = True
     if getattr(args, "ocr_dedupe", False):
         settings.ocr_dedupe = True
+    transcript_path = getattr(args, "transcript", None)
+    if transcript_path:
+        settings.transcript_path = str(transcript_path)
     return settings
 
 

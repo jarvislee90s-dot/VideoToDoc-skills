@@ -52,6 +52,8 @@ def main() -> int:
     ]
 
     # 可选参数
+    if args.transcript:
+        cmd += ["--transcript", str(args.transcript)]
     if args.model:
         cmd += ["--model", args.model]
     if args.scene_threshold is not None:

@@ -49,6 +49,7 @@ class Settings:
     max_periods_per_segment: int = 3
     min_segment_chars: int = 30
     max_segment_chars: int = 400
+    transcript_path: str = ""
 
 
 def load_dotenv(path: Path) -> None:

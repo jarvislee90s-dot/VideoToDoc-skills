@@ -70,7 +70,18 @@ def process_video(
     audio = extract_audio(video_path, audio_path, settings, force=_stage_forced(force_rebuild, "audio"))
 
     # 步骤 2：ASR 转录（必须在截图裁剪之前完成）
-    transcript = transcribe_audio(audio, transcript_path, settings, force=_stage_forced(force_rebuild, "asr"))
+    if settings.transcript_path:
+        from .io import read_json
+        from .models import Transcript, TranscriptSegment
+        data = read_json(Path(settings.transcript_path))
+        segs = [TranscriptSegment(start_ms=s.get("start_ms", s.get("start", 0)),
+                                  end_ms=s.get("end_ms", s.get("end", 0)),
+                                  text=s.get("text", ""))
+                for s in (data if isinstance(data, list) else data.get("segments", []))]
+        transcript = Transcript(backend="reused", language=settings.language, segments=segs)
+        print(f"  ♻️  复用已有转录：{settings.transcript_path}（{len(segs)} 段）")
+    else:
+        transcript = transcribe_audio(audio, transcript_path, settings, force=_stage_forced(force_rebuild, "asr"))
 
     # 步骤 3：生成候选截图（skip_dedupe=True，只生成候选图不做去重）
     candidates = detect_slides(
