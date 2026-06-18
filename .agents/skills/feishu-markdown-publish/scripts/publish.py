@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
@@ -57,14 +58,24 @@ def main() -> int:
     publisher = Publisher(project_dir, publish_dir, args.identity, args.dry_run)
     wiki_space = parse_wiki_space(args.target)
 
-    doc_ref = publisher.create_doc(
-        title, write_chunk(publish_dir, "initial", f"# {title}\n\n"), wiki_space,
-    )
-    publisher.update_doc(
-        doc_ref, write_chunk(publish_dir, "header", f"# {title}\n\n{parsed.header}"), "overwrite",
-    )
+    # 断点续传：检测已有进度
+    progress = publisher.load_progress()
+    if progress:
+        doc_ref = progress["doc_ref"]
+        start_index = progress["last_section"] + 1
+        print(f"  ♻️  检测到断点续传，从第 {start_index} 页继续：{doc_ref}")
+    else:
+        doc_ref = publisher.create_doc(
+            title, write_chunk(publish_dir, "initial", f"# {title}\n\n"), wiki_space,
+        )
+        publisher.update_doc(
+            doc_ref, write_chunk(publish_dir, "header", f"# {title}\n\n{parsed.header}"), "overwrite",
+        )
+        start_index = 1
 
     for index, section in enumerate(parsed.sections, start=1):
+        if index < start_index:
+            continue
         publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_title", ensure_blank(section.title)))
         if section.image:
             publisher.insert_image(doc_ref, section.image, section.caption)
@@ -72,6 +83,7 @@ def main() -> int:
             publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_body", ensure_blank(section.body)))
         if index < len(parsed.sections):
             publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_divider", "\n\n---\n\n"))
+        publisher.save_progress(doc_ref, index)
 
     if parsed.mindmap:
         publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_title", ensure_blank(parsed.mindmap.title)))
@@ -79,6 +91,8 @@ def main() -> int:
             publisher.insert_image(doc_ref, parsed.mindmap.image, parsed.mindmap.caption)
         if parsed.mindmap.body:
             publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_body", ensure_blank(parsed.mindmap.body)))
+
+    publisher.clear_progress()
 
     print("飞书文档发布 dry-run：" if args.dry_run else "飞书文档发布完成：")
     print(doc_ref)
@@ -93,16 +107,18 @@ class Publisher:
         self.dry_run = dry_run
         self.asset_dir = publish_dir / "assets"
         self.asset_dir.mkdir(parents=True, exist_ok=True)
+        self.progress_path = publish_dir / "publish_progress.json"
 
     def create_doc(self, title: str, markdown_path: Path, wiki_space: str | None) -> str:
         cmd = [
             "lark-cli", "docs", "+create",
-            "--title", title,
-            "--markdown", f"@{self._cli_path(markdown_path)}",
+            "--api-version", "v2",
+            "--doc-format", "markdown",
+            "--content", f"@{self._cli_path(markdown_path)}",
             "--as", self.identity,
         ]
         if wiki_space:
-            cmd += ["--wiki-space", wiki_space]
+            cmd += ["--parent-token", wiki_space]
         if self.dry_run:
             print("DRY-RUN", " ".join(cmd))
             return f"dry-run:{title}"
@@ -115,8 +131,10 @@ class Publisher:
     def update_doc(self, doc_ref: str, markdown_path: Path, mode: str) -> None:
         cmd = [
             "lark-cli", "docs", "+update",
-            "--doc", doc_ref, "--mode", mode,
-            "--markdown", f"@{self._cli_path(markdown_path)}",
+            "--api-version", "v2",
+            "--doc", doc_ref, "--command", mode,
+            "--doc-format", "markdown",
+            "--content", f"@{self._cli_path(markdown_path)}",
             "--as", self.identity,
         ]
         if self.dry_run:
@@ -149,14 +167,24 @@ class Publisher:
             shutil.copy2(image_path, target)
         return target
 
-    def _run(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        result = subprocess.run(
-            args, cwd=self.project_dir, text=True,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(result.stderr.strip() or result.stdout.strip())
-        return result
+    def _run(self, args: list[str], retries: int = 4) -> subprocess.CompletedProcess[str]:
+        last_err = ""
+        for attempt in range(retries):
+            result = subprocess.run(
+                args, cwd=self.project_dir, text=True,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            )
+            if result.returncode == 0:
+                return result
+            last_err = result.stderr.strip() or result.stdout.strip()
+            retryable = any(k in last_err for k in ("1771001", "server internal error", "rate limit", "9999", "too many", "timeout"))
+            if attempt < retries - 1 and retryable:
+                wait = 5 * (attempt + 1)
+                print(f"  ⚠️ 第 {attempt+1} 次失败，{wait}s 后重试：{last_err[:120]}", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            raise RuntimeError(last_err)
+        raise RuntimeError(last_err)
 
     def _cli_path(self, path: Path) -> str:
         try:
@@ -164,6 +192,20 @@ class Publisher:
         except ValueError:
             # 路径不在项目根下时回退到绝对路径
             return str(path.resolve())
+
+    def load_progress(self) -> dict | None:
+        if not self.progress_path.exists():
+            return None
+        return json.loads(self.progress_path.read_text(encoding="utf-8"))
+
+    def save_progress(self, doc_ref: str, last_section: int) -> None:
+        self.progress_path.write_text(
+            json.dumps({"doc_ref": doc_ref, "last_section": last_section}, ensure_ascii=False),
+            encoding="utf-8",
+        )
+
+    def clear_progress(self) -> None:
+        self.progress_path.unlink(missing_ok=True)
 
 
 # ── Markdown 解析 ──────────────────────────────────────────
