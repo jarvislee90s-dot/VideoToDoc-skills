@@ -47,7 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--capture-mode", choices=["fast", "fine", "audit", "complete"])
     process.add_argument("--fallback-interval-sec", type=int)
     process.add_argument("--keep-all-candidates", action="store_true")
-    process.add_argument("--ocr-dedupe", action="store_true")
+    process.add_argument("--no-ocr-dedupe", action="store_true",
+                         help="关闭 OCR 辅助去重（白底 PPT 易误合并，不建议）")
     process.add_argument("--ocr-similarity-threshold", type=float)
     process.add_argument("--duplicate-change-threshold", type=float)
     process.add_argument("--different-change-threshold", type=float)
@@ -75,7 +76,8 @@ def build_parser() -> argparse.ArgumentParser:
     finalize = subparsers.add_parser("finalize", help="按 confirmed 分段去重补图 + 生成产物")
     finalize.add_argument("run_dir", type=Path)
     finalize.add_argument("--capture-mode", choices=["fast", "fine", "audit", "complete"])
-    finalize.add_argument("--ocr-dedupe", action="store_true")
+    finalize.add_argument("--no-ocr-dedupe", action="store_true",
+                          help="关闭 OCR 辅助去重（白底 PPT 易误合并，不建议）")
     finalize.add_argument("--force-rebuild", action="append", default=[])
 
     mindmap = subparsers.add_parser("render-mindmap", help="渲染 mindmap.mmd 并刷新 Word")
@@ -200,8 +202,8 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
             setattr(settings, field, value)
     if getattr(args, "keep_all_candidates", False):
         settings.keep_all_candidates = True
-    if getattr(args, "ocr_dedupe", False):
-        settings.ocr_dedupe = True
+    if getattr(args, "no_ocr_dedupe", False):
+        settings.ocr_dedupe = False
     transcript_path = getattr(args, "transcript", None)
     if transcript_path:
         settings.transcript_path = str(transcript_path)

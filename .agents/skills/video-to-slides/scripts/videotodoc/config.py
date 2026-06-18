@@ -33,7 +33,7 @@ class Settings:
     capture_margin_ms: int = 500
     fallback_interval_sec: int = 15
     keep_all_candidates: bool = False
-    ocr_dedupe: bool = False
+    ocr_dedupe: bool = True
     ocr_similarity_threshold: float = 0.92
     duplicate_change_threshold: float = 0.005
     different_change_threshold: float = 0.12
