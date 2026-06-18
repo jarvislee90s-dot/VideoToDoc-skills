@@ -78,6 +78,8 @@ def capture_video(
                                   text=s.get("text", ""))
                 for s in (data if isinstance(data, list) else data.get("segments", []))]
         transcript = Transcript(backend="reused", language=settings.language, segments=segs)
+        # 写入 cache 供 finalize 阶段读取
+        write_json(transcript_path, to_plain_dict(transcript))
         print(f"  ♻️  复用已有转录（{len(segs)} 段）")
     else:
         transcript = transcribe_audio(audio, transcript_path, settings, force=_stage_forced(force_rebuild, "asr"))
