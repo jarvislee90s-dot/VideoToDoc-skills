@@ -10,6 +10,8 @@ build/
 dist/
 runs/
 tmp/
+/scripts/
+/docs/
 *.wav
 *.m4a
 *.aac

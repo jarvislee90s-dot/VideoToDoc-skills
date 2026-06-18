@@ -567,22 +567,8 @@ def trim_candidates_by_transcript(
                     edge_density=slide.edge_density,
                 )
             )
-        else:
-            # 该段没有候选图，在中点快速提取一帧（补帧为兜底场景，快速 seek 即可）
-            image_path = output_dir / f"{len(trimmed_slides) + 1:04d}.png"
-            extract_frame(video_path, seg_mid_ms, image_path, precise=False)
-            trimmed_slides.append(
-                Slide(
-                    slide_index=len(trimmed_slides) + 1,
-                    image_path=str(image_path),
-                    start_ms=seg_start_ms,
-                    end_ms=seg_end_ms,
-                    capture_ms=seg_mid_ms,
-                    confidence=0.6,
-                    hash=f"{dhash(image_path):016x}",
-                    edge_density=edge_density(image_path),
-                )
-            )
+        # 无候选图的 ASR 段不补帧：auto 模式逐段补帧会导致每句一页的碎片化，
+        # 改由 align_sections 将无图段文字归并到最近的候选图所在页。
 
     metadata = dict(candidates.metadata)
     metadata["trimmed_by_transcript"] = True

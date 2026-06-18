@@ -73,8 +73,8 @@ def capture_video(
     if settings.transcript_path:
         from .models import Transcript, TranscriptSegment
         data = read_json(Path(settings.transcript_path))
-        segs = [TranscriptSegment(start_ms=s.get("start_ms", s.get("start", 0)),
-                                  end_ms=s.get("end_ms", s.get("end", 0)),
+        segs = [TranscriptSegment(start_ms=int(s["start_ms"]) if "start_ms" in s else int(round(float(s.get("start", 0)) * 1000)),
+                                  end_ms=int(s["end_ms"]) if "end_ms" in s else int(round(float(s.get("end", 0)) * 1000)),
                                   text=s.get("text", ""))
                 for s in (data if isinstance(data, list) else data.get("segments", []))]
         transcript = Transcript(backend="reused", language=settings.language, segments=segs)
@@ -155,8 +155,8 @@ def finalize_video(
     if transcript_files:
         from .models import Transcript, TranscriptSegment
         tdata = read_json(transcript_files[0])
-        tsegs = [TranscriptSegment(start_ms=s.get("start_ms", s.get("start", 0)),
-                                   end_ms=s.get("end_ms", s.get("end", 0)),
+        tsegs = [TranscriptSegment(start_ms=int(s["start_ms"]) if "start_ms" in s else int(round(float(s.get("start", 0)) * 1000)),
+                                   end_ms=int(s["end_ms"]) if "end_ms" in s else int(round(float(s.get("end", 0)) * 1000)),
                                    text=s.get("text", ""))
                  for s in (tdata if isinstance(tdata, list) else tdata.get("segments", []))]
         transcript = Transcript(backend="reused", language=settings.language, segments=tsegs)
@@ -283,8 +283,8 @@ def process_video(
         from .io import read_json
         from .models import Transcript, TranscriptSegment
         data = read_json(Path(settings.transcript_path))
-        segs = [TranscriptSegment(start_ms=s.get("start_ms", s.get("start", 0)),
-                                  end_ms=s.get("end_ms", s.get("end", 0)),
+        segs = [TranscriptSegment(start_ms=int(s["start_ms"]) if "start_ms" in s else int(round(float(s.get("start", 0)) * 1000)),
+                                  end_ms=int(s["end_ms"]) if "end_ms" in s else int(round(float(s.get("end", 0)) * 1000)),
                                   text=s.get("text", ""))
                 for s in (data if isinstance(data, list) else data.get("segments", []))]
         transcript = Transcript(backend="reused", language=settings.language, segments=segs)
