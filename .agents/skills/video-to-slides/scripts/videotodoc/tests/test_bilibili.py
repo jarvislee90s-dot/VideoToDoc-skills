@@ -20,3 +20,30 @@ class TestBilibiliRiskControl:
     def test_detect_v_voucher_error_code(self):
         data = {"code": -404, "message": "不存在"}
         assert vs_process._bilibili_detect_v_voucher(data) is False
+
+
+class TestCookiesFromBrowser:
+    def test_argparse_accepts_cookies_from_browser(self):
+        """argparse 接受 --cookies-from-browser 参数。"""
+        import sys
+        old_argv = sys.argv
+        sys.argv = ["process.py", "https://www.bilibili.com/video/BV123",
+                    "--cookies-from-browser", "chrome"]
+        try:
+            parser = vs_process._build_arg_parser()
+            args = parser.parse_args()
+            assert args.cookies_from_browser == "chrome"
+        finally:
+            sys.argv = old_argv
+
+    def test_argparse_default_none(self):
+        """默认不传 cookies-from-browser 时为 None。"""
+        import sys
+        old_argv = sys.argv
+        sys.argv = ["process.py", "https://www.bilibili.com/video/BV123"]
+        try:
+            parser = vs_process._build_arg_parser()
+            args = parser.parse_args()
+            assert args.cookies_from_browser is None
+        finally:
+            sys.argv = old_argv

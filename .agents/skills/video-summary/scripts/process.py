@@ -447,8 +447,12 @@ def _bilibili_extract_ids(url: str) -> tuple[str | None, str | None, str | None]
     return bvid, cid, title
 
 
-def _bilibili_download(url: str, run_dir: Path, title: str | None = None) -> Path:
-    """B站视频下载（curl_cffi 绕过 412），支持 DASH 和直链"""
+def _bilibili_download(url: str, run_dir: Path, title: str | None = None,
+                       stream_urls: tuple[str | None, str | None] | None = None) -> Path:
+    """B站视频下载（curl_cffi 绕过 412），支持 DASH 和直链。
+
+    stream_urls: 已获取的 (video_url, audio_url)，避免重复请求 playurl。
+    """
     from curl_cffi import requests as cffi_requests
 
     bvid, cid, extracted_title = _bilibili_extract_ids(url)
@@ -460,7 +464,10 @@ def _bilibili_download(url: str, run_dir: Path, title: str | None = None) -> Pat
     safe_title = _slugify(title)
 
     print(f"  📺 B站 BVID={bvid} CID={cid} 标题={title}")
-    v_url, a_url = _bilibili_get_stream_urls(bvid, cid)
+    if stream_urls:
+        v_url, a_url = stream_urls
+    else:
+        v_url, a_url = _bilibili_get_stream_urls(bvid, cid)
     if not v_url:
         raise RuntimeError("B站 playurl API 未返回视频流")
 
@@ -502,8 +509,12 @@ def _bilibili_download(url: str, run_dir: Path, title: str | None = None) -> Pat
         return out_path
 
 
-def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str | None = None) -> Path:
-    """下载视频到 run 目录"""
+def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str | None = None,
+                    cookies_from_browser: str | None = None) -> Path:
+    """下载视频到 run 目录
+
+    cookies_from_browser: B站 412 时从浏览器读取 cookies（chrome/firefox/safari/edge）
+    """
     import yt_dlp
 
     # B站优先使用 curl_cffi 绕过 412
@@ -515,16 +526,19 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
             v_url, a_url, is_v_voucher = _bilibili_get_stream_urls_with_cookies(bvid, cid)
             if is_v_voucher:
                 print("  ⚠️  B站 v_voucher 风控，未登录态无法获取视频流")
-                print("  💡  尝试策略2：自动探测浏览器登录态...")
-                # 策略2：cookies-from-browser 由包装器/agent 处理
+                if cookies_from_browser:
+                    print(f"  💡  策略2：使用 {cookies_from_browser} 浏览器 cookies 重试...")
+                    v_url2, a_url2, is_v2 = _bilibili_get_stream_urls_with_cookies(bvid, cid)
+                    if not is_v2 and v_url2:
+                        return _bilibili_download(url, run_dir, title, stream_urls=(v_url2, a_url2))
+                print("  ❌  该视频触发B站风控，需登录态。请用 --cookies-from-browser chrome 重试，或在浏览器登录B站。")
                 raise RuntimeError("BILI_V_VOUCHER_NEED_LOGIN")
             if v_url:
-                # 复用现有 _bilibili_download 的下载逻辑
-                return _bilibili_download(url, run_dir, title)
+                # 复用已获取的流 URL，不再重复请求 playurl
+                return _bilibili_download(url, run_dir, title, stream_urls=(v_url, a_url))
             print("  ⚠️  curl_cffi 未获取视频流，回退到 yt-dlp...")
         except RuntimeError as e:
             if "BILI_V_VOUCHER_NEED_LOGIN" in str(e):
-                print("  ❌  该视频触发B站风控，需登录态。请用 --cookies-from-browser chrome 重试，或在浏览器登录B站。")
                 raise
         except Exception as e:
             print(f"  ⚠️  curl_cffi 下载失败（{e}），回退到 yt-dlp...")
@@ -539,6 +553,8 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
     }
     if proxy:
         ydl_opts["proxy"] = proxy
+    if cookies_from_browser:
+        ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -706,7 +722,8 @@ def cmd_process(args: argparse.Namespace) -> None:
             save_subtitle_as_transcript(subtitle_text, transcript_json_path, transcript_txt_path, args.language, run_dir)
         else:
             title = title or "video"
-            video_path = download_video(user_input, run_dir, title, args.proxy)
+            video_path = download_video(user_input, run_dir, title, args.proxy,
+                                        cookies_from_browser=getattr(args, 'cookies_from_browser', None))
             audio_path = extract_audio(video_path, run_dir)
             transcribe_audio(audio_path, run_dir, args.asr_model, args.language)
 
@@ -755,7 +772,7 @@ def cmd_process(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
-def main():
+def _build_arg_parser():
     parser = argparse.ArgumentParser(
         description="video-summary：视频 URL 或本地文件 → 下载 + 字幕/ASR → 摘要"
     )
@@ -766,7 +783,14 @@ def main():
     parser.add_argument("--proxy", default=None, help="代理地址")
     parser.add_argument("--cleanup", default=None, choices=["all", "transcript-only"], help="清理模式")
     parser.add_argument("--no-subtitle", action="store_true", help="跳过字幕，强制使用 ASR")
+    parser.add_argument("--cookies-from-browser", default=None,
+                        choices=["chrome", "firefox", "safari", "edge"],
+                        help="从浏览器读取 cookies（B站 412 反爬时使用）")
+    return parser
 
+
+def main():
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     if args.input == "doctor":
