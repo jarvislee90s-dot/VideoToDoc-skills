@@ -544,9 +544,9 @@ def trim_candidates_by_transcript(
                 )
             )
         else:
-            # 该段没有候选图，在中点精确提取一帧
+            # 该段没有候选图，在中点快速提取一帧（补帧为兜底场景，快速 seek 即可）
             image_path = output_dir / f"{len(trimmed_slides) + 1:04d}.png"
-            extract_frame(video_path, seg_mid_ms, image_path, precise=True)
+            extract_frame(video_path, seg_mid_ms, image_path, precise=False)
             trimmed_slides.append(
                 Slide(
                     slide_index=len(trimmed_slides) + 1,
