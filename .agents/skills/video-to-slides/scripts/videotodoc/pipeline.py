@@ -243,14 +243,18 @@ def process_video(
     runs_dir: Path,
     settings: Settings,
     force_rebuild: set[str] | None = None,
+    run_dir: Path | None = None,
 ) -> ProcessResult:
     ensure_file(video_path, "视频文件")
     force_rebuild = force_rebuild or set()
 
-    # 使用视频标题+时间戳命名 run 目录
+    # slug/ts 仍用于后续产物文件名；run_dir 外部传入优先（复用 video-summary 目录）
     slug = slugify(video_path.stem)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = runs_dir / f"{slug}_{ts}"
+    if run_dir is not None:
+        run_dir = run_dir.resolve()
+    else:
+        run_dir = runs_dir / f"{slug}_{ts}"
     cache_dir = run_dir / "cache"
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)

@@ -39,6 +39,8 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("video", type=Path)
     process.add_argument("--config", type=Path, default=Path("config.yaml"))
     process.add_argument("--runs-dir", type=Path, default=Path("runs"))
+    process.add_argument("--run-dir", type=Path, default=None,
+                         help="显式指定输出目录（复用 video-summary 的 run_dir）")
     process.add_argument("--asr", dest="asr_backend")
     process.add_argument("--model", dest="asr_model")
     process.add_argument("--language")
@@ -148,7 +150,8 @@ def _capture(args: argparse.Namespace) -> int:
 
 def _process(args: argparse.Namespace) -> int:
     settings = _settings_from_args(args)
-    result = process_video(args.video, args.runs_dir, settings, set(args.force_rebuild))
+    result = process_video(args.video, args.runs_dir, settings, set(args.force_rebuild),
+                              run_dir=args.run_dir)
     print("处理完成：")
     print(f"- run_dir: {result.run_dir}")
     print(f"- transcript: {result.transcript_path}")
