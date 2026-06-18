@@ -26,7 +26,10 @@ def main() -> int:
     parser.add_argument("--fallback-interval-sec", type=int, default=15)
     parser.add_argument("--hash-threshold", type=int, default=None)
     parser.add_argument("--keep-all-candidates", action="store_true")
-    parser.add_argument("--ocr-dedupe", action="store_true")
+    parser.add_argument("--no-ocr-dedupe", action="store_true",
+                        help="关闭 OCR 辅助去重（默认开启）")
+    parser.add_argument("--run-dir", type=Path, default=None,
+                        help="显式指定输出目录（复用 video-summary 的 run_dir）")
     parser.add_argument("--ocr-similarity-threshold", type=float, default=None)
     parser.add_argument("--duplicate-change-threshold", type=float, default=None)
     parser.add_argument("--different-change-threshold", type=float, default=None)
@@ -39,7 +42,7 @@ def main() -> int:
     if not video_path.exists():
         print(f"❌ 视频不存在：{video_path}", file=sys.stderr)
         print(f"   如果视频是网页链接，请先运行 video-summary Skill 下载：")
-        print(f"   python3 skills/video-summary/scripts/process.py '<视频URL>'")
+        print(f"   python3 .agents/skills/video-summary/scripts/process.py '<视频URL>'")
         return 2
 
     project_dir = find_project_dir(args.project_dir, video_path)
@@ -64,8 +67,10 @@ def main() -> int:
         cmd += ["--hash-threshold", str(args.hash_threshold)]
     if args.keep_all_candidates:
         cmd.append("--keep-all-candidates")
-    if args.ocr_dedupe:
-        cmd.append("--ocr-dedupe")
+    if args.no_ocr_dedupe:
+        cmd.append("--no-ocr-dedupe")
+    if args.run_dir is not None:
+        cmd += ["--run-dir", str(args.run_dir)]
     if args.ocr_similarity_threshold is not None:
         cmd += ["--ocr-similarity-threshold", str(args.ocr_similarity_threshold)]
     if args.duplicate_change_threshold is not None:
@@ -83,8 +88,10 @@ def main() -> int:
     print(f"   视频：{video_path.name}")
     print(f"   ASR：{args.asr}")
     print(f"   截图模式：{args.capture_mode}")
-    if args.ocr_dedupe:
-        print(f"   OCR 去重：开启")
+    if args.no_ocr_dedupe:
+        print(f"   OCR 去重：关闭")
+    else:
+        print(f"   OCR 去重：开启（默认）")
 
     result = subprocess.run(
         cmd, cwd=project_dir,
