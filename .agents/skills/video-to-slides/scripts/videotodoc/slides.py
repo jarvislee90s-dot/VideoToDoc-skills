@@ -365,11 +365,35 @@ def slides_from_dict(data: dict) -> SlideSet:
 
 
 def _candidate_points(change_points: list[int], duration_ms: int, settings: Settings) -> list[int]:
-    points = list(change_points)
-    if settings.capture_mode in {"fine", "audit", "complete"} and settings.fallback_interval_sec > 0:
-        interval_ms = int(settings.fallback_interval_sec * 1000)
-        points.extend(range(interval_ms, duration_ms, interval_ms))
-    return sorted(point for point in set(points) if 0 < point < duration_ms)
+    """生成候选截图时间点。
+
+    固定间隔决定候选点数量。场景变化点仅在所属间隔窗口内微调
+    capture_ms 到最近的变化时刻，不产生额外候选点。
+    """
+    if settings.capture_mode not in {"fine", "audit", "complete"} or settings.fallback_interval_sec <= 0:
+        return sorted(p for p in change_points if 0 < p < duration_ms)
+
+    interval_ms = int(settings.fallback_interval_sec * 1000)
+    # 纯间隔点
+    interval_points = list(range(interval_ms, duration_ms, interval_ms))
+
+    if not change_points:
+        return interval_points
+
+    # 对每个间隔点，找最近的场景变化点做微调
+    result: list[int] = []
+    for ip in interval_points:
+        window_start = ip - interval_ms
+        window_end = ip + interval_ms
+        # 在 [window_start, window_end) 范围内找最近的场景变化点
+        candidates_in_window = [cp for cp in change_points if window_start <= cp < window_end]
+        if candidates_in_window:
+            best = min(candidates_in_window, key=lambda cp: abs(cp - ip))
+            result.append(best)
+        else:
+            result.append(ip)
+
+    return sorted(set(p for p in result if 0 < p < duration_ms))
 
 
 def _build_boundaries(change_points: list[int], duration_ms: int, min_slide_seconds: float) -> list[tuple[int, int]]:
@@ -544,9 +568,9 @@ def trim_candidates_by_transcript(
                 )
             )
         else:
-            # 该段没有候选图，在中点精确提取一帧
+            # 该段没有候选图，在中点快速提取一帧（补帧为兜底场景，快速 seek 即可）
             image_path = output_dir / f"{len(trimmed_slides) + 1:04d}.png"
-            extract_frame(video_path, seg_mid_ms, image_path, precise=True)
+            extract_frame(video_path, seg_mid_ms, image_path, precise=False)
             trimmed_slides.append(
                 Slide(
                     slide_index=len(trimmed_slides) + 1,
@@ -576,3 +600,69 @@ def _slide_overlaps_segment(slide: Slide, seg_start_ms: int, seg_end_ms: int) ->
     seg_end_ms 的截图归属于下一个 ASR 段。
     """
     return seg_start_ms <= slide.capture_ms < seg_end_ms
+
+
+def finalize_segment_slides(
+    segment: dict,
+    candidates: SlideSet,
+    video_path: Path,
+    output_dir: Path,
+    settings: Settings,
+) -> list[Slide]:
+    """对单个 segment 选 1 张最佳截图，返回 [Slide]。
+
+    选择策略：
+    1. 段内有候选图 → 选 edge_density 最高的（信息量最大）
+    2. 段内无候选图 → 段中点快速补一帧
+    slide 的时间范围设为段的 [start_ms, end_ms]，
+    使 align_sections 将段内所有 transcript 文字归到这一页。
+    """
+    seg_start = segment["start_ms"]
+    seg_end = segment["end_ms"]
+    slide_ids = set(segment.get("candidate_slide_ids", []))
+
+    # 取该 segment 的候选图
+    seg_candidates = [s for s in candidates.slides if s.slide_index in slide_ids]
+
+    if seg_candidates:
+        # 选 edge_density 最高的候选图
+        best = max(seg_candidates, key=lambda s: s.edge_density or 0.0)
+        return [Slide(
+            slide_index=1,
+            image_path=best.image_path,
+            start_ms=seg_start,
+            end_ms=seg_end,
+            capture_ms=best.capture_ms,
+            confidence=best.confidence,
+            hash=best.hash,
+            edge_density=best.edge_density,
+        )]
+
+    # 段内无候选图 → 中点补一帧
+    mid_ms = (seg_start + seg_end) // 2
+    img_path = output_dir / f"fill_{segment['id']}_mid.png"
+    extract_frame(video_path, mid_ms, img_path, precise=False)
+    return [Slide(
+        slide_index=1,
+        image_path=str(img_path),
+        start_ms=seg_start,
+        end_ms=seg_end,
+        capture_ms=mid_ms,
+        confidence=0.6,
+        hash=f"{dhash(img_path):016x}",
+        edge_density=edge_density(img_path),
+    )]
+
+
+def cross_segment_dedupe(segments_slides: list[list[Slide]], settings: Settings) -> None:
+    """跨段边界去重：相邻段末帧与首帧重复则删后者。"""
+    for i in range(len(segments_slides) - 1):
+        if not segments_slides[i] or not segments_slides[i + 1]:
+            continue
+        last = segments_slides[i][-1]
+        first = segments_slides[i + 1][0]
+        if is_near_duplicate(
+            Path(first.image_path), Path(last.image_path),
+            settings.hash_threshold, settings, DedupeStats(),
+        ):
+            segments_slides[i + 1].pop(0)

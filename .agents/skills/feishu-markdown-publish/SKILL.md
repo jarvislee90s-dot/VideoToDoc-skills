@@ -51,6 +51,14 @@ description: "将本地 VideoToDoc Markdown 文档发布到飞书云文档。触
       飞书文档 URL
 ```
 
+## 环境前置
+
+- **lark-cli 登录**：发布前必须确保 lark-cli 已登录，沙箱内需提权运行或先执行 `lark-cli config keychain-downgrade`
+- **断点续传**：发布中途失败后重跑，自动从断点继续，不新建文档
+- **lark-cli v2**：脚本已适配 v2 接口（`--content` + `--doc-format markdown`）
+
+---
+
 ## 输入
 
 - 必填：本地 Markdown 路径（如 `runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md`）

@@ -133,8 +133,8 @@ def check_dependencies(fatal: bool = True, check_asr: bool = False, check_downlo
         try:
             import mlx_whisper  # noqa: F401
             results.append(("mlx-whisper", "pip install mlx-whisper", True))
-        except ModuleNotFoundError:
-            results.append(("mlx-whisper", "pip install mlx-whisper", False))
+        except (ModuleNotFoundError, RuntimeError) as e:
+            results.append(("mlx-whisper", f"pip install mlx-whisper（当前不可用：{type(e).__name__}）", False))
 
     try:
         from curl_cffi import requests as _  # noqa: F401
@@ -279,34 +279,77 @@ def _download_subtitle(url: str, subtitle_list: list, run_dir: Path, title: str,
 
 
 def _parse_subtitle_file(path: Path) -> tuple[str | None, list[dict]]:
-    """解析字幕文件为纯文本"""
-    text = path.read_text(encoding="utf-8")
-    lines = []
-    segments = []
+    """解析字幕文件为纯文本 + 带 start_ms/end_ms 的 segment 列表。
 
+    支持 SRT、VTT（含 --> 时间戳行）和 XML 格式。
+    """
+    import re
+
+    text = path.read_text(encoding="utf-8")
+    lines_list: list[str] = []
+    segments: list[dict] = []
+
+    # SRT / VTT 格式：包含 --> 时间戳行
+    if "-->" in text:
+        # 按空行分块
+        blocks = re.split(r"\n\s*\n", text.strip())
+        for block in blocks:
+            block_lines = block.strip().split("\n")
+            # 找时间戳行
+            tc_line = None
+            text_lines: list[str] = []
+            for line in block_lines:
+                if "-->" in line:
+                    tc_line = line
+                elif line.strip() and not line.strip().isdigit():
+                    # 跳过 WEBVTT 头
+                    if not line.strip().startswith("WEBVTT"):
+                        text_lines.append(line.strip())
+            if tc_line and text_lines:
+                m = re.match(
+                    r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)",
+                    tc_line,
+                )
+                if m:
+                    g = m.groups()
+                    start_ms = int(int(g[0]) * 3600000 + int(g[1]) * 60000 + int(g[2]) * 1000 + int(g[3]))
+                    end_ms = int(int(g[4]) * 3600000 + int(g[5]) * 60000 + int(g[6]) * 1000 + int(g[7]))
+                    seg_text = " ".join(text_lines)
+                    lines_list.append(seg_text)
+                    segments.append({"start_ms": start_ms, "end_ms": end_ms, "text": seg_text})
+        if lines_list:
+            return "\n".join(lines_list), segments
+
+    # XML 格式
     if "<text" in text or "<p" in text:
         import xml.etree.ElementTree as ET
         try:
             root = ET.fromstring(text)
             for elem in root.iter():
                 if elem.text and elem.text.strip():
-                    lines.append(elem.text.strip())
-                    segments.append({"text": elem.text.strip(), "start": None, "end": None})
+                    start_attr = elem.get("start")
+                    dur_attr = elem.get("dur")
+                    start_ms = int(float(start_attr) * 1000) if start_attr else 0
+                    end_ms = start_ms + int(float(dur_attr) * 1000) if (start_ms is not None and dur_attr) else start_ms
+                    lines_list.append(elem.text.strip())
+                    segments.append({"start_ms": start_ms, "end_ms": end_ms, "text": elem.text.strip()})
         except ET.ParseError:
             pass
+        if lines_list:
+            return "\n".join(lines_list), segments
 
-    if not lines:
-        for line in text.splitlines():
-            line = line.strip()
-            if not line or line.isdigit():
-                continue
-            if "-->" in line or line.startswith("WEBVTT"):
-                continue
-            if line:
-                lines.append(line)
-                segments.append({"text": line, "start": None, "end": None})
+    # 纯文本兜底
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.isdigit():
+            continue
+        if "-->" in line or line.startswith("WEBVTT"):
+            continue
+        if line:
+            lines_list.append(line)
+            segments.append({"start_ms": 0, "end_ms": 0, "text": line})
 
-    return "\n".join(lines) if lines else None, segments
+    return "\n".join(lines_list) if lines_list else None, segments
 
 
 def fetch_subtitles(url: str, run_dir: Path, language: str = "zh") -> tuple[bool, str | None, str | None]:
@@ -342,6 +385,54 @@ def fetch_subtitles(url: str, run_dir: Path, language: str = "zh") -> tuple[bool
 
 
 # ── 视频下载 ────────────────────────────────────────────────
+
+
+def _bilibili_detect_v_voucher(data: dict) -> bool:
+    """检测 playurl 返回是否为 v_voucher 风控（无真实视频流）。"""
+    if data.get("code") != 0:
+        return False
+    d = data.get("data", {})
+    return "v_voucher" in d and "dash" not in d and "durl" not in d
+
+
+def _bilibili_get_stream_urls_with_cookies(bvid: str, cid: str) -> tuple[str | None, str | None, bool]:
+    """带 buvid cookies 调 playurl。返回 (video_url, audio_url, is_v_voucher)。"""
+    from curl_cffi import requests as cffi_requests
+
+    s = cffi_requests.Session(impersonate="chrome")
+    # 注入 buvid cookies
+    try:
+        fr = s.get("https://api.bilibili.com/x/frontend/finger/spi", timeout=20).json()
+        s.cookies.set("buvid3", fr["data"]["b_3"], domain=".bilibili.com")
+        s.cookies.set("buvid4", fr["data"]["b_4"], domain=".bilibili.com")
+    except Exception:
+        pass
+    s.get(f"https://www.bilibili.com/video/{bvid}", timeout=20)
+
+    resp = s.get(
+        "https://api.bilibili.com/x/player/wbi/playurl",
+        params={"bvid": bvid, "cid": cid, "fnval": 4048, "fnver": 0, "fourk": 1, "qn": 80},
+        timeout=30,
+    )
+    data = resp.json()
+    if _bilibili_detect_v_voucher(data):
+        return None, None, True
+    if data.get("code") != 0:
+        return None, None, False
+    d = data["data"]
+    if "dash" in d:
+        dash = d["dash"]
+        videos = dash.get("video", [])
+        audios = dash.get("audio", [])
+        best_video = max(videos, key=lambda v: v.get("height", 0) * v.get("width", 0)) if videos else None
+        best_audio = audios[0] if audios else None
+        v_url = best_video.get("baseUrl") or best_video.get("base_url") if best_video else None
+        a_url = best_audio.get("baseUrl") or best_audio.get("base_url") if best_audio else None
+        return v_url, a_url, False
+    elif "durl" in d:
+        durls = d["durl"]
+        return (durls[0]["url"] if durls else None), None, False
+    return None, None, False
 
 
 def _bilibili_get_stream_urls(bvid: str, cid: str) -> tuple[str | None, str | None]:
@@ -399,8 +490,12 @@ def _bilibili_extract_ids(url: str) -> tuple[str | None, str | None, str | None]
     return bvid, cid, title
 
 
-def _bilibili_download(url: str, run_dir: Path, title: str | None = None) -> Path:
-    """B站视频下载（curl_cffi 绕过 412），支持 DASH 和直链"""
+def _bilibili_download(url: str, run_dir: Path, title: str | None = None,
+                       stream_urls: tuple[str | None, str | None] | None = None) -> Path:
+    """B站视频下载（curl_cffi 绕过 412），支持 DASH 和直链。
+
+    stream_urls: 已获取的 (video_url, audio_url)，避免重复请求 playurl。
+    """
     from curl_cffi import requests as cffi_requests
 
     bvid, cid, extracted_title = _bilibili_extract_ids(url)
@@ -412,7 +507,10 @@ def _bilibili_download(url: str, run_dir: Path, title: str | None = None) -> Pat
     safe_title = _slugify(title)
 
     print(f"  📺 B站 BVID={bvid} CID={cid} 标题={title}")
-    v_url, a_url = _bilibili_get_stream_urls(bvid, cid)
+    if stream_urls:
+        v_url, a_url = stream_urls
+    else:
+        v_url, a_url = _bilibili_get_stream_urls(bvid, cid)
     if not v_url:
         raise RuntimeError("B站 playurl API 未返回视频流")
 
@@ -454,16 +552,37 @@ def _bilibili_download(url: str, run_dir: Path, title: str | None = None) -> Pat
         return out_path
 
 
-def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str | None = None) -> Path:
-    """下载视频到 run 目录"""
+def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str | None = None,
+                    cookies_from_browser: str | None = None) -> Path:
+    """下载视频到 run 目录
+
+    cookies_from_browser: B站 412 时从浏览器读取 cookies（chrome/firefox/safari/edge）
+    """
     import yt_dlp
 
     # B站优先使用 curl_cffi 绕过 412
     if _is_bilibili_url(url):
         try:
             from curl_cffi import requests as _  # noqa: F401
-            print(f"  ⬇️  下载视频（curl_cffi 模式）...")
-            return _bilibili_download(url, run_dir, title)
+            print("  ⬇️  下载视频（curl_cffi 模式，策略1：buvid cookies）...")
+            bvid, cid, _ = _bilibili_extract_ids(url)
+            v_url, a_url, is_v_voucher = _bilibili_get_stream_urls_with_cookies(bvid, cid)
+            if is_v_voucher:
+                print("  ⚠️  B站 v_voucher 风控，未登录态无法获取视频流")
+                if cookies_from_browser:
+                    print(f"  💡  策略2：使用 {cookies_from_browser} 浏览器 cookies 重试...")
+                    v_url2, a_url2, is_v2 = _bilibili_get_stream_urls_with_cookies(bvid, cid)
+                    if not is_v2 and v_url2:
+                        return _bilibili_download(url, run_dir, title, stream_urls=(v_url2, a_url2))
+                print("  ❌  该视频触发B站风控，需登录态。请用 --cookies-from-browser chrome 重试，或在浏览器登录B站。")
+                raise RuntimeError("BILI_V_VOUCHER_NEED_LOGIN")
+            if v_url:
+                # 复用已获取的流 URL，不再重复请求 playurl
+                return _bilibili_download(url, run_dir, title, stream_urls=(v_url, a_url))
+            print("  ⚠️  curl_cffi 未获取视频流，回退到 yt-dlp...")
+        except RuntimeError as e:
+            if "BILI_V_VOUCHER_NEED_LOGIN" in str(e):
+                raise
         except Exception as e:
             print(f"  ⚠️  curl_cffi 下载失败（{e}），回退到 yt-dlp...")
 
@@ -477,6 +596,8 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
     }
     if proxy:
         ydl_opts["proxy"] = proxy
+    if cookies_from_browser:
+        ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         ydl.download([url])
@@ -552,7 +673,7 @@ def transcribe_audio(audio_path: Path, run_dir: Path, model: str, language: str 
 
 
 def save_subtitle_as_transcript(subtitle_text: str, transcript_json_path: Path, transcript_txt_path: Path, language: str, run_dir: Path | None = None) -> None:
-    """将字幕文本保存为 transcript 格式"""
+    """将字幕文本保存为 transcript 格式（带 segments key 的 dict）。"""
     lines = [line.strip() for line in subtitle_text.splitlines() if line.strip()]
 
     segments = []
@@ -565,9 +686,19 @@ def save_subtitle_as_transcript(subtitle_text: str, transcript_json_path: Path, 
                 pass
 
     if not segments:
-        segments = [{"start": None, "end": None, "text": line} for line in lines]
+        segments = [{"start_ms": 0, "end_ms": 0, "text": line} for line in lines]
 
-    transcript_json_path.write_text(json.dumps(segments, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 统一为 start_ms/end_ms 字段名
+    normalized = []
+    for seg in segments:
+        normalized.append({
+            "start_ms": seg.get("start_ms", seg.get("start", 0)) or 0,
+            "end_ms": seg.get("end_ms", seg.get("end", 0)) or 0,
+            "text": seg.get("text", ""),
+        })
+
+    transcript_data = {"segments": normalized, "language": language}
+    transcript_json_path.write_text(json.dumps(transcript_data, ensure_ascii=False, indent=2), encoding="utf-8")
     transcript_txt_path.write_text("\n".join(lines), encoding="utf-8")
 
     print(f"  ✅ 字幕转录完成：{len(lines)} 行")
@@ -644,7 +775,8 @@ def cmd_process(args: argparse.Namespace) -> None:
             save_subtitle_as_transcript(subtitle_text, transcript_json_path, transcript_txt_path, args.language, run_dir)
         else:
             title = title or "video"
-            video_path = download_video(user_input, run_dir, title, args.proxy)
+            video_path = download_video(user_input, run_dir, title, args.proxy,
+                                        cookies_from_browser=getattr(args, 'cookies_from_browser', None))
             audio_path = extract_audio(video_path, run_dir)
             transcribe_audio(audio_path, run_dir, args.asr_model, args.language)
 
@@ -693,7 +825,7 @@ def cmd_process(args: argparse.Namespace) -> None:
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
-def main():
+def _build_arg_parser():
     parser = argparse.ArgumentParser(
         description="video-summary：视频 URL 或本地文件 → 下载 + 字幕/ASR → 摘要"
     )
@@ -704,7 +836,14 @@ def main():
     parser.add_argument("--proxy", default=None, help="代理地址")
     parser.add_argument("--cleanup", default=None, choices=["all", "transcript-only"], help="清理模式")
     parser.add_argument("--no-subtitle", action="store_true", help="跳过字幕，强制使用 ASR")
+    parser.add_argument("--cookies-from-browser", default=None,
+                        choices=["chrome", "firefox", "safari", "edge"],
+                        help="从浏览器读取 cookies（B站 412 反爬时使用）")
+    return parser
 
+
+def main():
+    parser = _build_arg_parser()
     args = parser.parse_args()
 
     if args.input == "doctor":
