@@ -133,8 +133,8 @@ def check_dependencies(fatal: bool = True, check_asr: bool = False, check_downlo
         try:
             import mlx_whisper  # noqa: F401
             results.append(("mlx-whisper", "pip install mlx-whisper", True))
-        except ModuleNotFoundError:
-            results.append(("mlx-whisper", "pip install mlx-whisper", False))
+        except (ModuleNotFoundError, RuntimeError) as e:
+            results.append(("mlx-whisper", f"pip install mlx-whisper（当前不可用：{type(e).__name__}）", False))
 
     try:
         from curl_cffi import requests as _  # noqa: F401
@@ -344,6 +344,54 @@ def fetch_subtitles(url: str, run_dir: Path, language: str = "zh") -> tuple[bool
 # ── 视频下载 ────────────────────────────────────────────────
 
 
+def _bilibili_detect_v_voucher(data: dict) -> bool:
+    """检测 playurl 返回是否为 v_voucher 风控（无真实视频流）。"""
+    if data.get("code") != 0:
+        return False
+    d = data.get("data", {})
+    return "v_voucher" in d and "dash" not in d and "durl" not in d
+
+
+def _bilibili_get_stream_urls_with_cookies(bvid: str, cid: str) -> tuple[str | None, str | None, bool]:
+    """带 buvid cookies 调 playurl。返回 (video_url, audio_url, is_v_voucher)。"""
+    from curl_cffi import requests as cffi_requests
+
+    s = cffi_requests.Session(impersonate="chrome")
+    # 注入 buvid cookies
+    try:
+        fr = s.get("https://api.bilibili.com/x/frontend/finger/spi", timeout=20).json()
+        s.cookies.set("buvid3", fr["data"]["b_3"], domain=".bilibili.com")
+        s.cookies.set("buvid4", fr["data"]["b_4"], domain=".bilibili.com")
+    except Exception:
+        pass
+    s.get(f"https://www.bilibili.com/video/{bvid}", timeout=20)
+
+    resp = s.get(
+        "https://api.bilibili.com/x/player/wbi/playurl",
+        params={"bvid": bvid, "cid": cid, "fnval": 4048, "fnver": 0, "fourk": 1, "qn": 80},
+        timeout=30,
+    )
+    data = resp.json()
+    if _bilibili_detect_v_voucher(data):
+        return None, None, True
+    if data.get("code") != 0:
+        return None, None, False
+    d = data["data"]
+    if "dash" in d:
+        dash = d["dash"]
+        videos = dash.get("video", [])
+        audios = dash.get("audio", [])
+        best_video = max(videos, key=lambda v: v.get("height", 0) * v.get("width", 0)) if videos else None
+        best_audio = audios[0] if audios else None
+        v_url = best_video.get("baseUrl") or best_video.get("base_url") if best_video else None
+        a_url = best_audio.get("baseUrl") or best_audio.get("base_url") if best_audio else None
+        return v_url, a_url, False
+    elif "durl" in d:
+        durls = d["durl"]
+        return (durls[0]["url"] if durls else None), None, False
+    return None, None, False
+
+
 def _bilibili_get_stream_urls(bvid: str, cid: str) -> tuple[str | None, str | None]:
     """通过 curl_cffi 直接调用 B站 playurl API 获取视频/音频流 URL
     返回 (video_url, audio_url)，DASH 格式分离
@@ -462,8 +510,22 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
     if _is_bilibili_url(url):
         try:
             from curl_cffi import requests as _  # noqa: F401
-            print(f"  ⬇️  下载视频（curl_cffi 模式）...")
-            return _bilibili_download(url, run_dir, title)
+            print("  ⬇️  下载视频（curl_cffi 模式，策略1：buvid cookies）...")
+            bvid, cid, _ = _bilibili_extract_ids(url)
+            v_url, a_url, is_v_voucher = _bilibili_get_stream_urls_with_cookies(bvid, cid)
+            if is_v_voucher:
+                print("  ⚠️  B站 v_voucher 风控，未登录态无法获取视频流")
+                print("  💡  尝试策略2：自动探测浏览器登录态...")
+                # 策略2：cookies-from-browser 由包装器/agent 处理
+                raise RuntimeError("BILI_V_VOUCHER_NEED_LOGIN")
+            if v_url:
+                # 复用现有 _bilibili_download 的下载逻辑
+                return _bilibili_download(url, run_dir, title)
+            print("  ⚠️  curl_cffi 未获取视频流，回退到 yt-dlp...")
+        except RuntimeError as e:
+            if "BILI_V_VOUCHER_NEED_LOGIN" in str(e):
+                print("  ❌  该视频触发B站风控，需登录态。请用 --cookies-from-browser chrome 重试，或在浏览器登录B站。")
+                raise
         except Exception as e:
             print(f"  ⚠️  curl_cffi 下载失败（{e}），回退到 yt-dlp...")
 

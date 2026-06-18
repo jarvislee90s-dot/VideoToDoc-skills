@@ -14,3 +14,8 @@ for p in (SCRIPTS_DIR, SHARED_DIR):
 FEISHU_SCRIPTS = Path(__file__).resolve().parents[4] / "feishu-markdown-publish" / "scripts"
 if str(FEISHU_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(FEISHU_SCRIPTS))
+
+# video-summary 脚本目录（供 test_bilibili 导入 process 模块）
+VS_SCRIPTS = Path(__file__).resolve().parents[4] / "video-summary" / "scripts"
+if str(VS_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(VS_SCRIPTS))
