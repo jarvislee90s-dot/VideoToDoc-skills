@@ -836,9 +836,9 @@ def _build_arg_parser():
     parser.add_argument("--proxy", default=None, help="代理地址")
     parser.add_argument("--cleanup", default=None, choices=["all", "transcript-only"], help="清理模式")
     parser.add_argument("--no-subtitle", action="store_true", help="跳过字幕，强制使用 ASR")
-    parser.add_argument("--cookies-from-browser", default=None,
+    parser.add_argument("--cookies-from-browser", default="chrome",
                         choices=["chrome", "firefox", "safari", "edge"],
-                        help="从浏览器读取 cookies（B站 412 反爬时使用）")
+                        help="浏览器 cookies 来源（默认 chrome，B 站风控需登录态）")
     return parser
 
 
