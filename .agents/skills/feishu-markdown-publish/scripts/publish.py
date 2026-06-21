@@ -205,12 +205,18 @@ class Publisher:
         return json.loads(self.progress_path.read_text(encoding="utf-8"))
 
     def save_progress(self, doc_ref: str, last_section: int) -> None:
+        # dry-run 不写断点状态，避免假 doc_ref 污染真实断点续传
+        if self.dry_run:
+            return
         self.progress_path.write_text(
             json.dumps({"doc_ref": doc_ref, "last_section": last_section}, ensure_ascii=False),
             encoding="utf-8",
         )
 
     def clear_progress(self) -> None:
+        # dry-run 不删断点状态，保留真实发布留下的续传进度
+        if self.dry_run:
+            return
         self.progress_path.unlink(missing_ok=True)
 
 
