@@ -77,17 +77,20 @@ def main() -> int:
     for index, section in enumerate(parsed.sections, start=1):
         if index < start_index:
             continue
-        # 合并 title + body + divider 为一次 append（API 调用 4N → 2N+1）
-        chunk_parts = [ensure_blank(section.title)]
-        if section.body:
-            chunk_parts.append(ensure_blank(section.body))
-        if index < total:
-            chunk_parts.append("\n\n---\n\n")
-        combined = "\n\n".join(chunk_parts)
-        publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}", combined))
-        # 图片单独上传
+        # 每页顺序：标题/时间 → 图片 → 正文 → 分隔线（与 Word 一致）
+        # 1. 插入页标题与时间
+        publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_title", ensure_blank(section.title)))
+        # 2. 插入图片
         if section.image:
             publisher.insert_image(doc_ref, section.image, section.caption)
+        # 3. 插入正文 + 分隔线
+        body_parts = []
+        if section.body:
+            body_parts.append(ensure_blank(section.body))
+        if index < total:
+            body_parts.append("\n\n---\n\n")
+        if body_parts:
+            publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_body", "\n\n".join(body_parts)))
         publisher.save_progress(doc_ref, index)
         print(f"  📤 第 {index}/{total} 页已发布", flush=True)
 
