@@ -4,6 +4,7 @@ import math
 import re
 import shutil
 import tempfile
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from PIL import Image, ImageFilter
@@ -45,12 +46,28 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
     slides: list[Slide] = []
     previous_hashes: list[int] = []
     dedupe_stats = DedupeStats()
-    for index, (start_ms, end_ms) in enumerate(boundaries, start=1):
+
+    def _extract_candidate(args: tuple[int, int, int]) -> tuple[int, int, int, Path, int, float]:
+        idx, start_ms, end_ms = args
         candidate_ms = _candidate_capture_ms(start_ms, end_ms, settings)
         candidate_path = _candidate_image_path(candidates_dir, candidate_points, candidate_ms)
         if not candidate_path.exists():
             extract_frame(video_path, candidate_ms, candidate_path, precise=False)
         image_hash = dhash(candidate_path)
+        ed = edge_density(candidate_path)
+        return (idx, start_ms, end_ms, candidate_path, image_hash, ed)
+
+    task_args = [(i, s, e) for i, (s, e) in enumerate(boundaries)]
+    precomputed: dict[int, tuple[int, int, Path, int, float]] = {}
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(_extract_candidate, arg): arg[0] for arg in task_args}
+        for future in as_completed(futures):
+            idx, start_ms, end_ms, candidate_path, image_hash, ed = future.result()
+            precomputed[idx] = (start_ms, end_ms, candidate_path, image_hash, ed)
+
+    for idx in range(len(boundaries)):
+        start_ms, end_ms, candidate_path, image_hash, ed = precomputed[idx]
+        candidate_ms = _candidate_capture_ms(start_ms, end_ms, settings)
         candidate_slide = Slide(
             slide_index=len(slides) + 1,
             image_path=str(candidate_path),
@@ -59,7 +76,7 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
             capture_ms=candidate_ms,
             confidence=0.8,
             hash=f"{image_hash:016x}",
-            edge_density=edge_density(candidate_path),
+            edge_density=ed,
         )
         if not keep_all and slides and is_near_duplicate(
             candidate_slide,
@@ -76,7 +93,7 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
                 slides[-1].capture_ms = candidate_ms
                 slides[-1].confidence = max(slides[-1].confidence, 0.8)
                 slides[-1].hash = f"{image_hash:016x}"
-                slides[-1].edge_density = candidate_slide.edge_density
+                slides[-1].edge_density = ed
                 slides[-1].ocr_text = None
                 previous_hashes[-1] = image_hash
             continue
@@ -113,23 +130,32 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
 
 
 def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Path, settings: Settings, candidates_dir: Path | None = None) -> list[Slide]:
-    refined: list[Slide] = []
-    for index, slide in enumerate(slides, start=1):
+    def _refine_one(args: tuple[int, Slide]) -> tuple[int, Slide]:
+        index, slide = args
         capture_ms, confidence = choose_capture_time(video_path, slide.start_ms, slide.end_ms, settings, candidates_dir)
         image_path = output_dir / f"{index:04d}.png"
         extract_frame(video_path, capture_ms, image_path, precise=True)
-        refined.append(
-            Slide(
-                slide_index=index,
-                image_path=str(image_path),
-                start_ms=slide.start_ms,
-                end_ms=slide.end_ms,
-                capture_ms=capture_ms,
-                confidence=confidence,
-                hash=f"{dhash(image_path):016x}",
-                edge_density=edge_density(image_path),
-            )
+        refined_slide = Slide(
+            slide_index=index,
+            image_path=str(image_path),
+            start_ms=slide.start_ms,
+            end_ms=slide.end_ms,
+            capture_ms=capture_ms,
+            confidence=confidence,
+            hash=f"{dhash(image_path):016x}",
+            edge_density=edge_density(image_path),
         )
+        return (index, refined_slide)
+
+    task_args = list(enumerate(slides, start=1))
+    results: dict[int, Slide] = {}
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(_refine_one, arg): arg[0] for arg in task_args}
+        for future in as_completed(futures):
+            idx, slide = future.result()
+            results[idx] = slide
+
+    refined = [results[i] for i in range(1, len(slides) + 1)]
     return refined
 
 
