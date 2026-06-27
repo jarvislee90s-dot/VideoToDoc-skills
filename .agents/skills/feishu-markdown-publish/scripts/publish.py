@@ -176,13 +176,23 @@ class Publisher:
             shutil.copy2(image_path, target)
         return target
 
-    def _run(self, args: list[str], retries: int = 4) -> subprocess.CompletedProcess[str]:
+    def _run(self, args: list[str], retries: int = 4, timeout: float = 60) -> subprocess.CompletedProcess[str]:
         last_err = ""
         for attempt in range(retries):
-            result = subprocess.run(
-                args, cwd=self.project_dir, text=True,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            )
+            try:
+                result = subprocess.run(
+                    args, cwd=self.project_dir, text=True,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                    timeout=timeout,
+                )
+            except subprocess.TimeoutExpired as exc:
+                last_err = f"lark-cli 调用超时（{timeout}s）：{' '.join(args)}"
+                if attempt < retries - 1:
+                    wait = 5 * (attempt + 1)
+                    print(f"  ⚠️ 第 {attempt+1} 次超时，{wait}s 后重试", file=sys.stderr)
+                    time.sleep(wait)
+                    continue
+                raise RuntimeError(last_err)
             if result.returncode == 0:
                 return result
             last_err = result.stderr.strip() or result.stdout.strip()

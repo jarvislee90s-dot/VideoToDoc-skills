@@ -57,9 +57,23 @@ def _find_mmdc() -> str:
 def _run_mmdc(args: list[str]) -> None:
     env = _mmdc_env()
     try:
-        subprocess.run(args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, env=env)
+        subprocess.run(
+            args, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, env=env, timeout=120,
+        )
     except FileNotFoundError as exc:
         raise VideoToDocError(f"找不到命令：{args[0]}") from exc
+    except subprocess.TimeoutExpired as exc:
+        cmd_str = " ".join(args)
+        details = ""
+        if exc.stderr:
+            stderr_text = exc.stderr if isinstance(exc.stderr, str) else exc.stderr.decode("utf-8", errors="replace")
+            if stderr_text.strip():
+                details = f"\nstderr: {stderr_text.strip()}"
+        elif exc.stdout:
+            stdout_text = exc.stdout if isinstance(exc.stdout, str) else exc.stdout.decode("utf-8", errors="replace")
+            if stdout_text.strip():
+                details = f"\nstdout: {stdout_text.strip()}"
+        raise VideoToDocError(f"命令执行超时（120s）：{cmd_str}{details}") from exc
     except subprocess.CalledProcessError as exc:
         message = exc.stderr.strip() or exc.stdout.strip()
         raise VideoToDocError(f"命令执行失败：{' '.join(args)}\n{message}") from exc

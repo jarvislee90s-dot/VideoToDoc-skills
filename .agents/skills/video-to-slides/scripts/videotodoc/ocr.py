@@ -26,7 +26,7 @@ def extract_text(image_path: str) -> str:
     if text:
         return normalize_ocr_text(text)
     try:
-        result = run_command(["tesseract", image_path, "stdout", "-l", "chi_sim+eng", "--psm", "6"])
+        result = run_command(["tesseract", image_path, "stdout", "-l", "chi_sim+eng", "--psm", "6"], timeout=30)
     except Exception:
         return ""
     return normalize_ocr_text(result.stdout)

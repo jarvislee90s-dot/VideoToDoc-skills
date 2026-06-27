@@ -133,7 +133,10 @@ def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Pa
 
 def detect_scene_changes(video_path: Path, threshold: float) -> list[int]:
     expr = f"select=gt(scene\\,{threshold}),showinfo"
-    result = run_command(["ffmpeg", "-hide_banner", "-i", str(video_path), "-vf", expr, "-f", "null", "-"])
+    result = run_command(
+        ["ffmpeg", "-hide_banner", "-i", str(video_path), "-vf", expr, "-f", "null", "-"],
+        timeout=600,
+    )
     text = result.stderr + "\n" + result.stdout
     changes: list[int] = []
     for match in re.finditer(r"pts_time:([0-9.]+)", text):
@@ -264,7 +267,7 @@ def extract_frame(video_path: Path, capture_ms: int, output_path: Path, precise:
             "2",
             str(output_path),
         ]
-    run_command(args)
+    run_command(args, timeout=30)
 
 
 def dhash(image_path: Path, hash_size: int = 8) -> int:

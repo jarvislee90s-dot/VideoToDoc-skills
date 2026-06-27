@@ -17,7 +17,8 @@ def probe_duration_ms(video_path: Path) -> int:
             "-of",
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
-        ]
+        ],
+        timeout=30,
     )
     try:
         return int(float(result.stdout.strip()) * 1000)
@@ -40,5 +41,5 @@ def extract_audio(video_path: Path, output_path: Path, settings: Settings, force
     else:
         args += ["-ac", "1", "-ar", "16000", "-acodec", "pcm_s16le"]
     args.append(str(output_path))
-    run_command(args)
+    run_command(args, timeout=300)
     return output_path
