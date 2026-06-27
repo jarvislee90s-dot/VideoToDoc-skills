@@ -443,10 +443,6 @@ def _build_boundaries(change_points: list[int], duration_ms: int, min_slide_seco
     return [(points[index], points[index + 1]) for index in range(len(points) - 1) if points[index + 1] > points[index]]
 
 
-def _is_duplicate(image_hash: int, previous_hashes: list[int], threshold: int) -> bool:
-    return any(hamming_distance(image_hash, old_hash) <= threshold for old_hash in previous_hashes)
-
-
 def deduplicate_slides(
     candidates: SlideSet,
     settings: Settings,
@@ -612,16 +608,6 @@ def trim_candidates_by_transcript(
     metadata["trimmed_slide_count"] = len(trimmed_slides)
 
     return SlideSet(slides=trimmed_slides, metadata=metadata)
-
-
-def _slide_overlaps_segment(slide: Slide, seg_start_ms: int, seg_end_ms: int) -> bool:
-    """判断截图时间是否与 ASR 段重叠。
-
-    使用 capture_ms（截图时间点）判断，而非 start_ms/end_ms。
-    采用半开区间 [seg_start_ms, seg_end_ms)：capture_ms 等于
-    seg_end_ms 的截图归属于下一个 ASR 段。
-    """
-    return seg_start_ms <= slide.capture_ms < seg_end_ms
 
 
 def finalize_segment_slides(

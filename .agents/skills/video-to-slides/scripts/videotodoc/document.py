@@ -9,12 +9,6 @@ from .io import write_text
 from .models import Section
 
 
-def render_markdown(title: str, sections: list[Section], mindmap: str, output_path: Path) -> Path:
-    """兼容旧调用：生成保留原始转录换行的 Markdown。"""
-
-    return render_original_markdown(title, sections, output_path)
-
-
 def render_original_markdown(title: str, sections: list[Section], output_path: Path) -> Path:
     lines = [f"# {title}", "", "## 图文讲义", ""]
     for section in sections:
@@ -221,12 +215,6 @@ def generate_mindmap(title: str, sections: list[Section], output_path: Path, set
     mindmap = "\n".join(lines)
     write_text(output_path, mindmap)
     return mindmap
-
-
-def render_docx(title: str, sections: list[Section], mindmap: str, output_path: Path) -> Path | None:
-    compact_path = output_path.with_name("draft_compact.md")
-    render_compact_markdown(title, sections, compact_path)
-    return markdown_to_docx(compact_path, output_path)
 
 
 def _configure_document_styles(document: object) -> None:

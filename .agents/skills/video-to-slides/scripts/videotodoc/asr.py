@@ -127,7 +127,6 @@ def _split_with_word_timestamps(
 
     # 构建子段
     start_ms = segment.start_ms
-    word_idx = 0
     for i, sent in enumerate(sentences):
         end_word_idx = sentence_word_ends[i]
         # 该子段结束时间 = 对应词的 end_ms
@@ -145,7 +144,6 @@ def _split_with_word_timestamps(
         ))
         # 下一子段从该词之后开始
         start_ms = end_ms
-        word_idx = end_word_idx + 1
 
     return result
 

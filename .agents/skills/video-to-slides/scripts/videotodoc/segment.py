@@ -18,17 +18,11 @@ def capture_interval_for_duration(duration_sec: float) -> int:
         return 30
     return 40
 
-from difflib import SequenceMatcher
 from typing import Any
 
 from .models import Slide, SlideSet, Transcript
 
-# 步骤词：含这些词的短段强制 keep，不合并
 _STEP_WORDS = ("第一步", "第二步", "第三步", "首先", "然后", "接下来", "操作", "步骤", "点击", "输入")
-
-
-def _text_similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
 
 
 def _has_step_words(text: str) -> bool:
@@ -47,11 +41,12 @@ def generate_pending_segments(
     分段边界由 transcript 内容决定，不由候选图 capture_ms 决定。
     启发式规则：
     1. 以 transcript segment 边界为初始切分点
-    2. 相邻片段文本相似度 >= 0.85 → merge
-    3. 相邻片段合并后字数 <= max_segment_chars 且无步骤词 → merge
-    4. 单段字数 > max_segment_chars → 标记 split
-    5. 单段字数 < min_segment_chars → 标记 merge 到前一段
+    2. 贪心合并相邻片段：只要合并后总字数 <= max_segment_chars 就合并（不检查文本相似度，步骤词不阻止合并）
+    3. 单段字数 > max_segment_chars → 标记 split
+    4. 非首段且字数 < min_segment_chars 且无步骤词 → 标记 merge 到前一段
+    5. 其余段标记 keep
     6. 候选图 slide_ids 记录在段内，但不决定边界
+    7. 步骤词只影响 suggested_action 标签（含步骤词的短段保持 keep），不影响实际合并
     """
     interval = capture_interval_for_duration(duration_sec)
 
