@@ -77,29 +77,35 @@ def main() -> int:
     for index, section in enumerate(parsed.sections, start=1):
         if index < start_index:
             continue
-        # 每页顺序：标题/时间 → 图片 → 正文 → 分隔线（与 Word 一致）
-        # 1. 插入页标题与时间
-        publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_title", ensure_blank(section.title)))
-        # 2. 插入图片
-        if section.image:
-            publisher.insert_image(doc_ref, section.image, section.caption)
-        # 3. 插入正文 + 分隔线
         body_parts = []
         if section.body:
             body_parts.append(ensure_blank(section.body))
         if index < total:
             body_parts.append("\n\n---\n\n")
-        if body_parts:
-            publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_body", "\n\n".join(body_parts)))
+        body_text = "\n\n".join(body_parts)
+
+        if section.image:
+            publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_title", ensure_blank(section.title)))
+            publisher.insert_image(doc_ref, section.image, section.caption)
+            if body_text:
+                publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_body", body_text))
+        else:
+            combined = ensure_blank(section.title) + body_text
+            if combined.strip():
+                publisher.append_doc(doc_ref, write_chunk(publish_dir, f"section_{index:03d}_content", combined))
         publisher.save_progress(doc_ref, index)
         print(f"  📤 第 {index}/{total} 页已发布", flush=True)
 
     if parsed.mindmap:
-        publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_title", ensure_blank(parsed.mindmap.title)))
         if parsed.mindmap.image:
+            publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_title", ensure_blank(parsed.mindmap.title)))
             publisher.insert_image(doc_ref, parsed.mindmap.image, parsed.mindmap.caption)
-        if parsed.mindmap.body:
-            publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_body", ensure_blank(parsed.mindmap.body)))
+            if parsed.mindmap.body:
+                publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_body", ensure_blank(parsed.mindmap.body)))
+        else:
+            mindmap_combined = ensure_blank(parsed.mindmap.title) + ensure_blank(parsed.mindmap.body)
+            if mindmap_combined.strip():
+                publisher.append_doc(doc_ref, write_chunk(publish_dir, "mindmap_content", mindmap_combined))
 
     publisher.clear_progress()
 
