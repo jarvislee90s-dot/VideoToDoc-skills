@@ -27,6 +27,11 @@ import urllib.request
 from datetime import datetime
 from pathlib import Path
 
+
+def _seconds_to_ms(seconds: float) -> int:
+    return max(0, int(round(float(seconds) * 1000)))
+
+
 # ── 站点代理映射 ──────────────────────────────────────────────
 
 SITE_PROXY_MAP: dict[str, str] = {}
@@ -693,9 +698,15 @@ def save_subtitle_as_transcript(subtitle_text: str, transcript_json_path: Path, 
     # 统一为 start_ms/end_ms 字段名
     normalized = []
     for seg in segments:
+        if "start_ms" in seg:
+            start_ms = int(seg["start_ms"])
+            end_ms = int(seg["end_ms"])
+        else:
+            start_ms = _seconds_to_ms(seg.get("start", 0))
+            end_ms = _seconds_to_ms(seg.get("end", 0))
         normalized.append({
-            "start_ms": seg.get("start_ms", seg.get("start", 0)) or 0,
-            "end_ms": seg.get("end_ms", seg.get("end", 0)) or 0,
+            "start_ms": start_ms,
+            "end_ms": end_ms,
             "text": seg.get("text", ""),
         })
 

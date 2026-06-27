@@ -6,7 +6,7 @@ from pathlib import Path
 from .config import Settings
 from .models import Transcript, TranscriptSegment, WordTimestamp, to_plain_dict
 from .io import read_json, write_json
-from .utils import VideoToDocError
+from .utils import VideoToDocError, seconds_to_ms
 
 # 句末标点：强切分点（句号/问号/感叹号）
 _STRONG_SENTENCE_ENDS = set('。！？!?')
@@ -262,16 +262,22 @@ def transcript_from_dict(data: dict) -> Transcript:
         words_data = item.get("words", []) or []
         words = [
             WordTimestamp(
-                start_ms=int(round(float(w.get("start", 0)) * 1000)),
-                end_ms=int(round(float(w.get("end", 0)) * 1000)),
+                start_ms=int(w["start_ms"]) if "start_ms" in w else seconds_to_ms(float(w.get("start", 0))),
+                end_ms=int(w["end_ms"]) if "end_ms" in w else seconds_to_ms(float(w.get("end", 0))),
                 word=str(w.get("word", "")),
             )
             for w in words_data
         ]
+        start_ms = item.get("start_ms")
+        if start_ms is None:
+            start_ms = seconds_to_ms(float(item.get("start", 0)))
+        end_ms = item.get("end_ms")
+        if end_ms is None:
+            end_ms = seconds_to_ms(float(item.get("end", 0)))
         segs.append(TranscriptSegment(
-            start_ms=item.get("start_ms", 0),
-            end_ms=item.get("end_ms", 0),
-            text=item.get("text", ""),
+            start_ms=int(start_ms),
+            end_ms=int(end_ms),
+            text=item.get("text", "").strip(),
             confidence=item.get("confidence"),
             words=words,
         ))
@@ -307,16 +313,16 @@ def _faster_whisper(audio_path: Path, settings: Settings) -> Transcript:
             confidence = max(0.0, min(1.0, (float(segment.avg_logprob) + 1.5) / 1.5))
         words = [
             WordTimestamp(
-                start_ms=int(round(w.start * 1000)),
-                end_ms=int(round(w.end * 1000)),
+                start_ms=seconds_to_ms(w.start),
+                end_ms=seconds_to_ms(w.end),
                 word=str(w.word),
             )
             for w in (getattr(segment, "words", None) or [])
         ]
         items.append(
             TranscriptSegment(
-                start_ms=int(round(segment.start * 1000)),
-                end_ms=int(round(segment.end * 1000)),
+                start_ms=seconds_to_ms(segment.start),
+                end_ms=seconds_to_ms(segment.end),
                 text=segment.text,
                 confidence=confidence,
                 words=words,
@@ -357,16 +363,16 @@ def _mlx_whisper(audio_path: Path, settings: Settings) -> Transcript:
     for segment in result.get("segments", []):
         words = [
             WordTimestamp(
-                start_ms=int(round(float(w.get("start", 0)) * 1000)),
-                end_ms=int(round(float(w.get("end", 0)) * 1000)),
+                start_ms=seconds_to_ms(float(w.get("start", 0))),
+                end_ms=seconds_to_ms(float(w.get("end", 0))),
                 word=str(w.get("word", "")),
             )
             for w in segment.get("words", []) or []
         ]
         items.append(
             TranscriptSegment(
-                start_ms=int(round(float(segment.get("start", 0)) * 1000)),
-                end_ms=int(round(float(segment.get("end", 0)) * 1000)),
+                start_ms=seconds_to_ms(float(segment.get("start", 0))),
+                end_ms=seconds_to_ms(float(segment.get("end", 0))),
                 text=str(segment.get("text", "")).strip(),
                 confidence=None,
                 words=words,

@@ -29,7 +29,7 @@ from .slides import (
 from .segment import capture_interval_for_duration, generate_pending_segments
 from .sync import estimate_sync_offset_ms
 from datetime import datetime
-from .utils import ensure_file, file_md5, slugify
+from .utils import ensure_file, file_md5, slugify, seconds_to_ms
 
 
 def _transcript_from_external(data: object, language: str) -> "Transcript":
@@ -37,8 +37,8 @@ def _transcript_from_external(data: object, language: str) -> "Transcript":
     from .models import Transcript, TranscriptSegment
     items = data if isinstance(data, list) else data.get("segments", [])  # type: ignore[union-attr]
     segs = [TranscriptSegment(
-        start_ms=int(s["start_ms"]) if "start_ms" in s else int(round(float(s.get("start", 0)) * 1000)),
-        end_ms=int(s["end_ms"]) if "end_ms" in s else int(round(float(s.get("end", 0)) * 1000)),
+        start_ms=int(s["start_ms"]) if "start_ms" in s else seconds_to_ms(float(s.get("start", 0))),
+        end_ms=int(s["end_ms"]) if "end_ms" in s else seconds_to_ms(float(s.get("end", 0))),
         text=s.get("text", ""),
     ) for s in items]
     return Transcript(backend="reused", language=language, segments=segs)
