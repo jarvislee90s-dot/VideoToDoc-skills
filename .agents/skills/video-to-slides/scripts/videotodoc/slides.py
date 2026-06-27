@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import re
+import shutil
+import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageFilter
@@ -49,16 +51,24 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
         if not candidate_path.exists():
             extract_frame(video_path, candidate_ms, candidate_path, precise=False)
         image_hash = dhash(candidate_path)
+        candidate_slide = Slide(
+            slide_index=len(slides) + 1,
+            image_path=str(candidate_path),
+            start_ms=start_ms,
+            end_ms=end_ms,
+            capture_ms=candidate_ms,
+            confidence=0.8,
+            hash=f"{image_hash:016x}",
+            edge_density=edge_density(candidate_path),
+        )
         if not keep_all and slides and is_near_duplicate(
-            candidate_path,
-            Path(slides[-1].image_path),
+            candidate_slide,
+            slides[-1],
             settings.hash_threshold,
             settings,
             dedupe_stats,
         ):
             if slides:
-                # 同一页 PPT 后续帧通常信息更完整，例如多了手写标注或动画末态。
-                # 判为重复时保留时间段起点，但替换成后面这张截图。
                 old_start_ms = slides[-1].start_ms
                 slides[-1].image_path = str(candidate_path)
                 slides[-1].start_ms = old_start_ms
@@ -66,26 +76,16 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
                 slides[-1].capture_ms = candidate_ms
                 slides[-1].confidence = max(slides[-1].confidence, 0.8)
                 slides[-1].hash = f"{image_hash:016x}"
-                slides[-1].edge_density = edge_density(candidate_path)
+                slides[-1].edge_density = candidate_slide.edge_density
+                slides[-1].ocr_text = None
                 previous_hashes[-1] = image_hash
             continue
         previous_hashes.append(image_hash)
-        slides.append(
-            Slide(
-                slide_index=len(slides) + 1,
-                image_path=str(candidate_path),
-                start_ms=start_ms,
-                end_ms=end_ms,
-                capture_ms=candidate_ms,
-                confidence=0.8,
-                hash=f"{image_hash:016x}",
-                edge_density=edge_density(candidate_path),
-            )
-        )
+        slides.append(candidate_slide)
 
     # skip_dedupe 模式下不做精确 seek 重提取和去重
     if not skip_dedupe:
-        slides = refine_selected_slides(video_path, slides, output_dir, settings)
+        slides = refine_selected_slides(video_path, slides, output_dir, settings, candidates_dir)
 
     if not slides:
         fallback_path = output_dir / "0001.png"
@@ -110,10 +110,12 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
     )
     write_json(output_json, to_plain_dict(slide_set))
     return slide_set
-def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Path, settings: Settings) -> list[Slide]:
+
+
+def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Path, settings: Settings, candidates_dir: Path | None = None) -> list[Slide]:
     refined: list[Slide] = []
     for index, slide in enumerate(slides, start=1):
-        capture_ms, confidence = choose_capture_time(video_path, slide.start_ms, slide.end_ms, settings)
+        capture_ms, confidence = choose_capture_time(video_path, slide.start_ms, slide.end_ms, settings, candidates_dir)
         image_path = output_dir / f"{index:04d}.png"
         extract_frame(video_path, capture_ms, image_path, precise=True)
         refined.append(
@@ -196,7 +198,7 @@ def _candidate_capture_ms(start_ms: int, end_ms: int, settings: Settings) -> int
     return max(start_ms, end_ms - margin_ms)
 
 
-def choose_capture_time(video_path: Path, start_ms: int, end_ms: int, settings: Settings) -> tuple[int, float]:
+def choose_capture_time(video_path: Path, start_ms: int, end_ms: int, settings: Settings, candidates_dir: Path | None = None) -> tuple[int, float]:
     if end_ms <= start_ms:
         return start_ms, 0.1
     window_ms = int(settings.stability_window_seconds * 1000)
@@ -208,17 +210,26 @@ def choose_capture_time(video_path: Path, start_ms: int, end_ms: int, settings: 
     if not times or times[-1] < sample_end:
         times.append(sample_end)
 
-    tmp_dir = Path(video_path).parent / ".videotodoc_tmp_frames"
-    tmp_dir.mkdir(exist_ok=True)
+    tmp_dir = tempfile.mkdtemp(prefix="videotodoc_frames_")
     hashes: list[tuple[int, int]] = []
     try:
-        for offset, capture_ms in enumerate(times):
-            frame_path = tmp_dir / f"frame_{start_ms}_{end_ms}_{offset}.png"
+        if candidates_dir and candidates_dir.exists():
+            for capture_ms in times:
+                matches = list(candidates_dir.glob(f"candidate_*_{capture_ms}.png"))
+                if not matches:
+                    matches = list(candidates_dir.glob(f"candidate_{capture_ms}.png"))
+                if matches:
+                    hashes.append((capture_ms, dhash(matches[0])))
+
+        missing_times = [t for t in times if not any(h[0] == t for h in hashes)]
+        for offset, capture_ms in enumerate(missing_times):
+            frame_path = Path(tmp_dir) / f"frame_{start_ms}_{end_ms}_{offset}.png"
             extract_frame(video_path, capture_ms, frame_path)
             hashes.append((capture_ms, dhash(frame_path)))
+
+        hashes.sort()
     finally:
-        for frame_path in tmp_dir.glob(f"frame_{start_ms}_{end_ms}_*.png"):
-            frame_path.unlink(missing_ok=True)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
     if len(hashes) < 2:
         return max(start_ms, end_ms - 300), 0.4
@@ -297,9 +308,25 @@ def hamming_distance(left: int, right: int) -> int:
     return (left ^ right).bit_count()
 
 
+def _get_slide_hash(slide: Slide) -> int:
+    if slide.hash:
+        return int(slide.hash, 16)
+    h = dhash(Path(slide.image_path))
+    slide.hash = f"{h:016x}"
+    return h
+
+
+def _get_slide_ocr_text(slide: Slide) -> str:
+    if slide.ocr_text is not None:
+        return slide.ocr_text
+    text = extract_text(slide.image_path)
+    slide.ocr_text = text
+    return text
+
+
 def is_near_duplicate(
-    image_path: Path,
-    previous_path: Path,
+    current: Slide,
+    previous: Slide,
     hash_threshold: int,
     settings: Settings | None = None,
     stats: DedupeStats | None = None,
@@ -310,8 +337,13 @@ def is_near_duplicate(
     且缩略图真实变化面积很小，才认为是重复页。
     """
 
-    change_ratio = image_change_ratio(image_path, previous_path)
-    hash_distance = hamming_distance(dhash(image_path), dhash(previous_path))
+    current_path = Path(current.image_path)
+    previous_path = Path(previous.image_path)
+
+    change_ratio = image_change_ratio(current_path, previous_path)
+    current_hash = _get_slide_hash(current)
+    previous_hash = _get_slide_hash(previous)
+    hash_distance = hamming_distance(current_hash, previous_hash)
     hash_close = hash_distance <= hash_threshold
 
     duplicate_change_threshold = settings.duplicate_change_threshold if settings else 0.005
@@ -331,10 +363,10 @@ def is_near_duplicate(
     if settings and settings.ocr_dedupe:
         if stats:
             stats.ocr_checks += 1
-        current_text = extract_text(str(image_path))
-        previous_text = extract_text(str(previous_path))
+        current_text = _get_slide_ocr_text(current)
+        previous_text = _get_slide_ocr_text(previous)
         similarity = text_similarity(current_text, previous_text)
-        if similarity >= settings.ocr_similarity_threshold and change_ratio < 0.12:
+        if similarity >= settings.ocr_similarity_threshold and change_ratio < different_change_threshold:
             if stats:
                 stats.ocr_duplicates += 1
             return True
@@ -445,7 +477,6 @@ def deduplicate_slides(
     for slide in candidates.slides:
         # 同一图片路径 → 不走图像比较，直接合并为"一图多段"
         if kept and kept[-1].image_path == slide.image_path:
-            # 扩展时间范围，保留同一图对应多段
             kept[-1] = Slide(
                 slide_index=kept[-1].slide_index,
                 image_path=slide.image_path,
@@ -455,18 +486,17 @@ def deduplicate_slides(
                 confidence=max(kept[-1].confidence, slide.confidence),
                 hash=slide.hash,
                 edge_density=slide.edge_density,
+                ocr_text=slide.ocr_text if slide.ocr_text is not None else kept[-1].ocr_text,
             )
             continue
 
-        # 不同图片 → 正常图像/OCR 去重判断
         if kept and is_near_duplicate(
-            Path(slide.image_path),
-            Path(kept[-1].image_path),
+            slide,
+            kept[-1],
             settings.hash_threshold,
             settings,
             dedupe_stats,
         ):
-            # 重复：保留后一张，继承前一张的 start_ms
             kept[-1] = Slide(
                 slide_index=kept[-1].slide_index,
                 image_path=slide.image_path,
@@ -476,6 +506,7 @@ def deduplicate_slides(
                 confidence=max(kept[-1].confidence, slide.confidence, 0.8),
                 hash=slide.hash,
                 edge_density=slide.edge_density,
+                ocr_text=None,
             )
             continue
 
@@ -489,6 +520,7 @@ def deduplicate_slides(
                 confidence=slide.confidence,
                 hash=slide.hash,
                 edge_density=slide.edge_density,
+                ocr_text=slide.ocr_text,
             )
         )
 
@@ -568,6 +600,7 @@ def trim_candidates_by_transcript(
                     confidence=slide.confidence,
                     hash=slide.hash,
                     edge_density=slide.edge_density,
+                    ocr_text=slide.ocr_text,
                 )
             )
         # 无候选图的 ASR 段不补帧：auto 模式逐段补帧会导致每句一页的碎片化，
@@ -625,6 +658,7 @@ def finalize_segment_slides(
             confidence=best.confidence,
             hash=best.hash,
             edge_density=best.edge_density,
+            ocr_text=best.ocr_text,
         )]
 
     # 段内无候选图 → 中点补一帧
@@ -651,7 +685,7 @@ def cross_segment_dedupe(segments_slides: list[list[Slide]], settings: Settings)
         last = segments_slides[i][-1]
         first = segments_slides[i + 1][0]
         if is_near_duplicate(
-            Path(first.image_path), Path(last.image_path),
+            first, last,
             settings.hash_threshold, settings, DedupeStats(),
         ):
             segments_slides[i + 1].pop(0)

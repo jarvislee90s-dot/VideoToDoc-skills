@@ -40,6 +40,7 @@ class Slide:
     confidence: float
     hash: str | None = None
     edge_density: float | None = None
+    ocr_text: str | None = None
 
 
 @dataclass
