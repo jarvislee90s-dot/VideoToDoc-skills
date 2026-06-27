@@ -24,6 +24,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -495,6 +496,14 @@ def _bilibili_extract_ids(url: str) -> tuple[str | None, str | None, str | None]
     return bvid, cid, title
 
 
+def _download_stream(url: str, tmp_path: Path, headers: dict) -> None:
+    from curl_cffi import requests as cffi_requests
+    r = cffi_requests.get(url, headers=headers, impersonate="chrome", timeout=120, stream=True)
+    with open(tmp_path, "wb") as f:
+        for chunk in r.iter_content(chunk_size=1024 * 256):
+            f.write(chunk)
+
+
 def _bilibili_download(url: str, run_dir: Path, title: str | None = None,
                        stream_urls: tuple[str | None, str | None] | None = None) -> Path:
     """B站视频下载（curl_cffi 绕过 412），支持 DASH 和直链。
@@ -522,22 +531,17 @@ def _bilibili_download(url: str, run_dir: Path, title: str | None = None,
     headers = {"Referer": "https://www.bilibili.com", "User-Agent": "Mozilla/5.0"}
 
     if a_url:
-        # DASH：分别下载视频和音频，合并
+        # DASH：分别下载视频和音频，合并（并行下载）
         v_tmp = run_dir / f"_{safe_title}_video_only.m4s"
         a_tmp = run_dir / f"_{safe_title}_audio_only.m4s"
         out_path = run_dir / f"{safe_title}.mp4"
 
-        print(f"  ⬇️  下载视频流...")
-        vr = cffi_requests.get(v_url, headers=headers, impersonate="chrome", timeout=120, stream=True)
-        with open(v_tmp, "wb") as f:
-            for chunk in vr.iter_content(chunk_size=1024 * 256):
-                f.write(chunk)
-
-        print(f"  ⬇️  下载音频流...")
-        ar = cffi_requests.get(a_url, headers=headers, impersonate="chrome", timeout=120, stream=True)
-        with open(a_tmp, "wb") as f:
-            for chunk in ar.iter_content(chunk_size=1024 * 256):
-                f.write(chunk)
+        print(f"  ⬇️  并行下载音视频流...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            f_video = executor.submit(_download_stream, v_url, v_tmp, headers)
+            f_audio = executor.submit(_download_stream, a_url, a_tmp, headers)
+            f_video.result()
+            f_audio.result()
 
         print(f"  🔀 合并音视频...")
         run_cmd(["ffmpeg", "-y", "-i", str(v_tmp), "-i", str(a_tmp),
@@ -550,10 +554,7 @@ def _bilibili_download(url: str, run_dir: Path, title: str | None = None,
         # 直链
         out_path = run_dir / f"{safe_title}.mp4"
         print(f"  ⬇️  下载视频...")
-        r = cffi_requests.get(v_url, headers=headers, impersonate="chrome", timeout=120, stream=True)
-        with open(out_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 256):
-                f.write(chunk)
+        _download_stream(v_url, out_path, headers)
         return out_path
 
 
