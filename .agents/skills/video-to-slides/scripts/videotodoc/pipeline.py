@@ -29,7 +29,7 @@ from .slides import (
 from .segment import capture_interval_for_duration, generate_pending_segments
 from .sync import estimate_sync_offset_ms
 from datetime import datetime
-from .utils import ensure_file, file_md5, slugify, seconds_to_ms
+from .utils import VideoToDocError, ensure_file, file_md5, slugify, seconds_to_ms
 
 
 def _transcript_from_external(data: object, language: str) -> "Transcript":
@@ -132,6 +132,50 @@ def _apply_merge_extensions(segments: list[dict]) -> list[dict]:
     return list(seg_map.values())
 
 
+def _find_matching_cache_file(
+    files: list[Path],
+    video_path: Path,
+    label: str,
+) -> Path:
+    """在 cache 文件列表中按 video_hash 匹配对应文件。
+
+    匹配策略（按优先级）：
+    1. 文件名以 video_hash 前12位开头（capture_video 命名规范）
+    2. JSON 顶层 video_hash 字段等于完整 md5
+    3. JSON metadata.video_hash 字段等于完整 md5
+    4. 仅一个文件时兜底使用（向后兼容）
+    5. 多文件无匹配时抛出 VideoToDocError
+    """
+    if not files:
+        raise VideoToDocError(f"❌ 找不到{label}缓存，请重新运行 capture")
+
+    video_hash_full = file_md5(video_path)
+    video_hash_short = video_hash_full[:12]
+
+    for cf in files:
+        if cf.name.startswith(f"{video_hash_short}_"):
+            return cf
+
+    for cf in files:
+        try:
+            data = read_json(cf)
+        except Exception:
+            continue
+        if isinstance(data, dict):
+            if data.get("video_hash") == video_hash_full:
+                return cf
+            meta = data.get("metadata", {})
+            if isinstance(meta, dict) and meta.get("video_hash") == video_hash_full:
+                return cf
+
+    if len(files) == 1:
+        return files[0]
+
+    raise VideoToDocError(
+        f"❌ cache 目录无匹配 video_hash 的{label}文件，请重跑 capture"
+    )
+
+
 def finalize_video(
     run_dir: Path,
     settings: Settings,
@@ -154,19 +198,16 @@ def finalize_video(
 
     video_path = Path(confirmed.get("video_path", ""))
 
-    # 找候选图缓存
+    # 找候选图缓存（按 video_hash 匹配，防止错配）
     cache_dir = run_dir / "cache"
     candidates_files = list(cache_dir.glob("*.candidates.json"))
-    if not candidates_files:
-        raise SystemExit("❌ 找不到候选图缓存，请重新运行 capture")
-    candidates = slides_from_dict(read_json(candidates_files[0]))
+    matched_candidates = _find_matching_cache_file(candidates_files, video_path, "候选图")
+    candidates = slides_from_dict(read_json(matched_candidates))
 
-    # 找 transcript 缓存
+    # 找 transcript 缓存（按 video_hash 匹配）
     transcript_files = list(cache_dir.glob("*.transcript.json"))
-    if transcript_files:
-        transcript = _transcript_from_external(read_json(transcript_files[0]), settings.language)
-    else:
-        raise SystemExit("❌ 找不到转录缓存，请重新运行 capture")
+    matched_transcript = _find_matching_cache_file(transcript_files, video_path, "转录")
+    transcript = _transcript_from_external(read_json(matched_transcript), settings.language)
 
     # 按 confirmed 分段处理
     fill_dir = run_dir / "fill_slides"
