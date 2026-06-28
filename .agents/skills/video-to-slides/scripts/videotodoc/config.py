@@ -31,6 +31,8 @@ class Settings:
     refine_fps: int = 8
     min_slide_seconds: float = 1.5
     capture_margin_ms: int = 500
+    frame_drift_back_seconds: float = 2.0
+    min_edge_density: float = 0.02
     fallback_interval_sec: int = 15
     keep_all_candidates: bool = False
     ocr_dedupe: bool = True
