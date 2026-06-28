@@ -442,6 +442,80 @@ def _bilibili_get_stream_urls_with_cookies(bvid: str, cid: str) -> tuple[str | N
     return None, None, False
 
 
+def _load_browser_cookies(browser: str, domain: str = ".bilibili.com") -> dict[str, str]:
+    """从浏览器读取指定 domain 的 cookies。
+
+    browser 可选：chrome, firefox, safari, edge。
+    未安装 browser_cookie3 时返回空字典。
+    """
+    try:
+        import browser_cookie3
+    except ImportError:
+        print("  ⚠️  未安装 browser_cookie3，无法读取浏览器 cookies")
+        return {}
+
+    loaders = {
+        "chrome": browser_cookie3.chrome,
+        "firefox": browser_cookie3.firefox,
+        "safari": browser_cookie3.safari,
+        "edge": browser_cookie3.edge,
+    }
+    loader = loaders.get(browser.lower())
+    if loader is None:
+        print(f"  ⚠️  不支持的浏览器：{browser}，跳过浏览器 cookies")
+        return {}
+
+    try:
+        cj = loader(domain_name=domain)
+        return {c.name: c.value for c in cj}
+    except Exception as e:
+        print(f"  ⚠️  读取 {browser} cookies 失败：{e}")
+        return {}
+
+
+def _bilibili_get_stream_urls_with_browser_cookies(
+    bvid: str, cid: str, browser: str
+) -> tuple[str | None, str | None, bool]:
+    """从浏览器读取登录态 cookies 调 B站 playurl。"""
+    from curl_cffi import requests as cffi_requests
+
+    cookies = _load_browser_cookies(browser)
+    if not cookies:
+        return None, None, False
+
+    s = cffi_requests.Session(impersonate="chrome")
+    for name, value in cookies.items():
+        s.cookies.set(name, value, domain=".bilibili.com")
+
+    s.get(f"https://www.bilibili.com/video/{bvid}", timeout=20)
+
+    resp = s.get(
+        "https://api.bilibili.com/x/player/wbi/playurl",
+        params={"bvid": bvid, "cid": cid, "fnval": 4048, "fnver": 0, "fourk": 1, "qn": 80},
+        timeout=30,
+    )
+    data = resp.json()
+    if _bilibili_detect_v_voucher(data):
+        return None, None, True
+    if data.get("code") != 0:
+        return None, None, False
+
+    d = data["data"]
+    if "dash" in d:
+        dash = d["dash"]
+        videos = dash.get("video", [])
+        audios = dash.get("audio", [])
+        best_video = max(videos, key=lambda v: v.get("height", 0) * v.get("width", 0)) if videos else None
+        best_audio = audios[0] if audios else None
+        v_url = best_video.get("baseUrl") or best_video.get("base_url") if best_video else None
+        a_url = best_audio.get("baseUrl") or best_audio.get("base_url") if best_audio else None
+        return v_url, a_url, False
+    elif "durl" in d:
+        durls = d["durl"]
+        return (durls[0]["url"] if durls else None), None, False
+    return None, None, False
+
+
 def _bilibili_get_stream_urls(bvid: str, cid: str) -> tuple[str | None, str | None]:
     """通过 curl_cffi 直接调用 B站 playurl API 获取视频/音频流 URL
     返回 (video_url, audio_url)，DASH 格式分离
@@ -603,7 +677,7 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
                 print("  ⚠️  B站 v_voucher 风控，未登录态无法获取视频流")
                 if cookies_from_browser:
                     print(f"  💡  策略2：使用 {cookies_from_browser} 浏览器 cookies 重试...")
-                    v_url2, a_url2, is_v2 = _bilibili_get_stream_urls_with_cookies(bvid, cid)
+                    v_url2, a_url2, is_v2 = _bilibili_get_stream_urls_with_browser_cookies(bvid, cid, cookies_from_browser)
                     if not is_v2 and v_url2:
                         return _bilibili_download(url, run_dir, title, stream_urls=(v_url2, a_url2))
                     print(f"  ⚠️  curl_cffi 带cookies仍触发v_voucher，回退到 yt-dlp（使用浏览器cookies）...")
