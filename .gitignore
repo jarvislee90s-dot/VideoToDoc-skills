@@ -11,7 +11,9 @@ dist/
 runs/
 tmp/
 /scripts/
-/docs/
+/docs/*
+!/docs/superpowers/
+!/docs/superpowers/specs/
 *.wav
 *.m4a
 *.aac
