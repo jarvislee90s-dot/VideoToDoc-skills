@@ -36,3 +36,24 @@ def test_multi_column_root_on_top():
     # Chapters below root
     for ch in layout.chapter_nodes:
         assert ch["y"] > layout.root_node["y"]
+
+
+def test_single_column_root_on_left():
+    mmd = """mindmap
+  root((R))
+    A
+      a1
+      a2
+    B
+      b1
+"""
+    root = _parse_mermaid_tree(mmd)
+    cfg = LayoutConfig(max_col_height=500, chapter_h=30, leaf_h=20, leaf_gap=8, chapter_gap=20)
+    layout = compute_layout(root, cfg)
+    assert layout.column_count == 1
+    # Root is on the left
+    assert layout.root_node["x"] < layout.chapter_nodes[0]["x"]
+    assert abs(layout.root_node["y"] - layout.image_height / 2) < 10
+    # Chapters are to the right of the root
+    for ch in layout.chapter_nodes:
+        assert ch["x"] > layout.root_node["x"]

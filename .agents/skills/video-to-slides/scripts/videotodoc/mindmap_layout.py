@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TypedDict
 
 from .mindmap import _MindmapNode
@@ -17,7 +16,6 @@ class LayoutConfig:
         leaf_gap: int = 12,
         chapter_gap: int = 40,
         col_gap: int = 60,
-        min_leaf_gap: int = 14,
         root_w: int = 115,
         root_h: int = 48,
         top_padding: int = 90,
@@ -32,7 +30,6 @@ class LayoutConfig:
         self.leaf_gap = leaf_gap
         self.chapter_gap = chapter_gap
         self.col_gap = col_gap
-        self.min_leaf_gap = min_leaf_gap
         self.root_w = root_w
         self.root_h = root_h
         self.top_padding = top_padding
@@ -51,14 +48,21 @@ class LayoutNode(TypedDict):
 
 
 class MindmapLayout:
-    def __init__(self, root: LayoutNode, image_width: float, image_height: float) -> None:
+    def __init__(
+        self,
+        root: LayoutNode,
+        image_width: float,
+        image_height: float,
+        column_count: int,
+    ) -> None:
         self.root_node = root
         self.image_width = image_width
         self.image_height = image_height
+        self._column_count = column_count
 
     @property
     def column_count(self) -> int:
-        return len(self.root_node["children"])
+        return self._column_count
 
     @property
     def chapter_nodes(self) -> list[LayoutNode]:
@@ -158,4 +162,4 @@ def compute_layout(root: _MindmapNode, cfg: LayoutConfig | None = None) -> Mindm
         children=col_layouts,
     )
 
-    return MindmapLayout(root_layout, image_width, image_height)
+    return MindmapLayout(root_layout, image_width, image_height, len(columns))
