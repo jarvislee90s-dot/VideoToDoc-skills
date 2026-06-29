@@ -16,6 +16,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="渲染思维导图并刷新 Word 产物。")
     parser.add_argument("run_dir", nargs="?", type=Path, help="包含 mindmap.mmd 的 run 目录；不传则使用最新 run")
     parser.add_argument("--project-dir", type=Path, default=None)
+    parser.add_argument("--mermaid", action="store_true", help="使用 Mermaid CLI 渲染（默认使用 Python 渲染器）")
     args = parser.parse_args()
 
     project_dir = find_project_dir(args.project_dir, args.run_dir.resolve() if args.run_dir else None)
@@ -25,6 +26,8 @@ def main() -> int:
         return 2
 
     cmd = [str(project_python(project_dir)), "-m", "videotodoc.cli", "render-mindmap", str(run_dir)]
+    if args.mermaid:
+        cmd.append("--mermaid")
     result = subprocess.run(
         cmd, cwd=project_dir,
         env={**os.environ, "PYTHONPATH": str(Path(__file__).parent)},

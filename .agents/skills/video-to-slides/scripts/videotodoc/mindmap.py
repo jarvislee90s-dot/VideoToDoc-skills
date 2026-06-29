@@ -107,7 +107,7 @@ def _render_mindmap_with_python(mindmap_path: Path, image_path: Path) -> None:
     try:
         from PIL import Image, ImageDraw, ImageFont  # type: ignore
     except ModuleNotFoundError as exc:
-        raise VideoToDocError("mmdc 渲染失败，且未安装 Pillow，无法使用 Python fallback。") from exc
+        raise VideoToDocError("未安装 Pillow，无法使用 Python 渲染器。") from exc
 
     root = _parse_mermaid_tree(mindmap_path.read_text(encoding="utf-8"))
     if not root:
@@ -127,14 +127,28 @@ def _render_mindmap_with_python_from_tree(root: _MindmapNode, image_path: Path) 
     font_root = _load_font(14)
     font_chapter = _load_font(12)
     font_leaf = _load_font(10)
-    _draw_layout_node(draw, layout.root_node, font_root, font_chapter, font_leaf)
+    _draw_layout_node(draw, layout.root_node, layout, font_root, font_chapter, font_leaf)
     image_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(image_path)
 
 
-def _draw_layout_node(draw: ImageDraw.ImageDraw, node: LayoutNode, font_root, font_chapter, font_leaf) -> None:
+def _draw_layout_node(
+    draw: ImageDraw.ImageDraw,
+    node: LayoutNode,
+    layout: MindmapLayout,
+    font_root,
+    font_chapter,
+    font_leaf,
+) -> None:
     x, y, w, h = node["x"], node["y"], node["width"], node["height"]
     level = node["level"]
+
+    if node.get("is_column_entry"):
+        for child in node["children"]:
+            _draw_connection(draw, node, child)
+            _draw_layout_node(draw, child, layout, font_root, font_chapter, font_leaf)
+        return
+
     if level == 0:
         fill, outline, font, color = "#4caf50", "#4caf50", font_root, "white"
         radius = 10
@@ -147,13 +161,37 @@ def _draw_layout_node(draw: ImageDraw.ImageDraw, node: LayoutNode, font_root, fo
 
     draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=fill, outline=outline, width=2 if level <= 1 else 1)
     text = _wrap_text(node["text"], 12 if level == 0 else (10 if level == 1 else 9))
-    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=2)
-    text_h = bbox[3] - bbox[1]
-    draw.multiline_text((x + w / 2, y + h / 2 - text_h / 2), text, fill=color, font=font, spacing=2, anchor="mm")
+    draw.multiline_text((x + w / 2, y + h / 2), text, fill=color, font=font, spacing=2, anchor="mm")
 
-    for child in node["children"]:
-        _draw_connection(draw, node, child)
-        _draw_layout_node(draw, child, font_root, font_chapter, font_leaf)
+    if level == 0 and layout.column_count > 1:
+        _draw_multi_column_root_connections(draw, node, layout)
+        for child in node["children"]:
+            _draw_layout_node(draw, child, layout, font_root, font_chapter, font_leaf)
+    else:
+        for child in node["children"]:
+            _draw_connection(draw, node, child)
+            _draw_layout_node(draw, child, layout, font_root, font_chapter, font_leaf)
+
+
+def _draw_multi_column_root_connections(draw: ImageDraw.ImageDraw, root: LayoutNode, layout: MindmapLayout) -> None:
+    root_x = root["x"]
+    root_bottom = root["y"] + root["height"] / 2
+    beam_y = layout.beam_y
+    if beam_y is None or not layout.column_entries:
+        return
+    # 下垂短虚线
+    _draw_dashed_line(draw, (root_x, root_bottom), (root_x, beam_y), fill="#4caf50", width=2, dash=(6, 4))
+    # 顶部横梁
+    first_entry = layout.column_entries[0]
+    last_entry = layout.column_entries[-1]
+    _draw_dashed_line(
+        draw,
+        (first_entry["x"], beam_y),
+        (last_entry["x"], beam_y),
+        fill="#4caf50",
+        width=2,
+        dash=(8, 5),
+    )
 
 
 def _draw_connection(draw: ImageDraw.ImageDraw, parent: LayoutNode, child: LayoutNode) -> None:
@@ -161,8 +199,65 @@ def _draw_connection(draw: ImageDraw.ImageDraw, parent: LayoutNode, child: Layou
     py = parent["y"] + parent["height"] / 2
     cx = child["x"]
     cy = child["y"] + child["height"] / 2
-    mid_x = (px + cx) / 2
-    draw.line([(px, py), (mid_x, py), (mid_x, cy), (cx, cy)], fill="#aac2e6", width=2, joint="curve")
+    dx = cx - px
+    # 控制点：水平拉开，避免折线
+    cp1 = (px + dx * 0.5, py)
+    cp2 = (cx - dx * 0.5, cy)
+    # 控制点不应越过对方
+    cp1 = (min(cp1[0], cx), cp1[1])
+    cp2 = (max(cp2[0], px), cp2[1])
+    _draw_bezier(draw, (px, py), cp1, cp2, (cx, cy), fill="#aac2e6", width=2)
+
+
+def _draw_bezier(
+    draw: ImageDraw.ImageDraw,
+    p0: tuple[float, float],
+    p1: tuple[float, float],
+    p2: tuple[float, float],
+    p3: tuple[float, float],
+    fill: str,
+    width: int,
+    segments: int = 40,
+) -> None:
+    points: list[tuple[float, float]] = []
+    for i in range(segments + 1):
+        t = i / segments
+        t2 = t * t
+        t3 = t2 * t
+        u = 1 - t
+        u2 = u * u
+        u3 = u2 * u
+        x = u3 * p0[0] + 3 * u2 * t * p1[0] + 3 * u * t2 * p2[0] + t3 * p3[0]
+        y = u3 * p0[1] + 3 * u2 * t * p1[1] + 3 * u * t2 * p2[1] + t3 * p3[1]
+        points.append((x, y))
+    draw.line(points, fill=fill, width=width)
+
+
+def _draw_dashed_line(
+    draw: ImageDraw.ImageDraw,
+    start: tuple[float, float],
+    end: tuple[float, float],
+    fill: str,
+    width: int,
+    dash: tuple[int, int],
+) -> None:
+    x1, y1 = start
+    x2, y2 = end
+    length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
+    if length == 0:
+        return
+    dx, dy = (x2 - x1) / length, (y2 - y1) / length
+    pos = 0.0
+    draw_on = True
+    while pos < length:
+        segment_len = dash[0] if draw_on else dash[1]
+        segment_len = min(segment_len, length - pos)
+        seg_start = (x1 + dx * pos, y1 + dy * pos)
+        seg_end = (x1 + dx * (pos + segment_len), y1 + dy * (pos + segment_len))
+        if draw_on:
+            draw.line([seg_start, seg_end], fill=fill, width=width)
+        pos += segment_len
+        draw_on = not draw_on
 
 
 class _MindmapNode:
