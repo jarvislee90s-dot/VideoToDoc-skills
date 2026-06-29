@@ -170,6 +170,8 @@ python3 scripts/restore_images.py \
 ### ⑨ 渲染导图
 
 - 运行 `scripts/render_mindmap.py`
+- 默认使用内置 Python 渲染器生成目录树状思维导图（多栏自适应）
+- 如需旧版 Mermaid 圆形散射，可传 `--mermaid` 参数
 - 将 `.mmd` 渲染为 `.png`
 
 ### ⑩ 生成 Word
