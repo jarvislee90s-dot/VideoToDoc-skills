@@ -105,7 +105,7 @@ def _build_layout_node(node: _MindmapNode, cfg: LayoutConfig, x: float, y: float
             children=[],
         )
     children_layout: list[LayoutNode] = []
-    child_x = x + (cfg.chapter_w if node.level == 0 else cfg.leaf_w + 70)
+    child_x = x + (cfg.chapter_w if node.level == 1 else cfg.leaf_w + 70)
     # children stack vertically
     total_h = sum(_subtree_height(c, cfg) for c in node.children) + (len(node.children) - 1) * cfg.leaf_gap
     child_y = y - total_h / 2
@@ -118,8 +118,8 @@ def _build_layout_node(node: _MindmapNode, cfg: LayoutConfig, x: float, y: float
         level=node.level,
         x=x,
         y=y,
-        width=cfg.chapter_w if node.level == 0 else cfg.leaf_w,
-        height=cfg.chapter_h if node.level == 0 else cfg.leaf_h,
+        width=cfg.chapter_w if node.level == 1 else cfg.leaf_w,
+        height=cfg.chapter_h if node.level == 1 else cfg.leaf_h,
         children=children_layout,
     )
 
@@ -133,7 +133,7 @@ def compute_layout(root: _MindmapNode, cfg: LayoutConfig | None = None) -> Mindm
     x = cfg.margin_x + (cfg.root_w + 60 if not multi_column else 0)
     max_col_h = 0.0
 
-    for col_nodes in columns:
+    for i, col_nodes in enumerate(columns):
         col_h = sum(_subtree_height(n, cfg) for n in col_nodes) + (len(col_nodes) - 1) * cfg.chapter_gap
         y = cfg.top_padding if multi_column else cfg.margin_y + cfg.root_h / 2
         chapter_layouts: list[LayoutNode] = []
@@ -141,9 +141,11 @@ def compute_layout(root: _MindmapNode, cfg: LayoutConfig | None = None) -> Mindm
             chapter = _build_layout_node(node, cfg, x, y + _subtree_height(node, cfg) / 2)
             chapter_layouts.append(chapter)
             y += _subtree_height(node, cfg) + cfg.chapter_gap
-        # Wrap column under a synthetic spine node for rendering
+        # Chapters are extended directly into col_layouts
         col_layouts.extend(chapter_layouts)
-        x += cfg.chapter_w + 115 + cfg.leaf_w + cfg.col_gap
+        x += cfg.chapter_w + 115 + cfg.leaf_w
+        if i < len(columns) - 1:
+            x += cfg.col_gap
         max_col_h = max(max_col_h, col_h)
 
     image_width = x + cfg.margin_x

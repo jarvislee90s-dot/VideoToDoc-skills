@@ -1,4 +1,4 @@
-from videotodoc.mindmap_layout import LayoutConfig, compute_layout
+from videotodoc.mindmap_layout import LayoutConfig, LayoutNode, compute_layout
 from videotodoc.mindmap import _parse_mermaid_tree
 
 LONG_MMD = """mindmap
@@ -25,6 +25,16 @@ LONG_MMD = """mindmap
       d4
 """
 
+
+def _collect_leaves(node: LayoutNode) -> list[LayoutNode]:
+    if not node["children"]:
+        return [node]
+    leaves: list[LayoutNode] = []
+    for child in node["children"]:
+        leaves.extend(_collect_leaves(child))
+    return leaves
+
+
 def test_multi_column_root_on_top():
     root = _parse_mermaid_tree(LONG_MMD)
     cfg = LayoutConfig(max_col_height=200, chapter_h=30, leaf_h=20, leaf_gap=8, chapter_gap=20)
@@ -36,6 +46,17 @@ def test_multi_column_root_on_top():
     # Chapters below root
     for ch in layout.chapter_nodes:
         assert ch["y"] > layout.root_node["y"]
+        assert ch["width"] == cfg.chapter_w
+        assert ch["height"] == cfg.chapter_h
+    for leaf in _collect_leaves(layout.root_node):
+        assert leaf["width"] == cfg.leaf_w
+        assert leaf["height"] == cfg.leaf_h
+    expected_width = (
+        2 * cfg.margin_x
+        + layout.column_count * (cfg.chapter_w + 115 + cfg.leaf_w)
+        + (layout.column_count - 1) * cfg.col_gap
+    )
+    assert abs(layout.image_width - expected_width) < 1
 
 
 def test_single_column_root_on_left():
@@ -57,3 +78,10 @@ def test_single_column_root_on_left():
     # Chapters are to the right of the root
     for ch in layout.chapter_nodes:
         assert ch["x"] > layout.root_node["x"]
+        assert ch["width"] == cfg.chapter_w
+        assert ch["height"] == cfg.chapter_h
+    for leaf in _collect_leaves(layout.root_node):
+        assert leaf["width"] == cfg.leaf_w
+        assert leaf["height"] == cfg.leaf_h
+    expected_width = 2 * cfg.margin_x + cfg.root_w + 60 + cfg.chapter_w + 115 + cfg.leaf_w
+    assert abs(layout.image_width - expected_width) < 1
