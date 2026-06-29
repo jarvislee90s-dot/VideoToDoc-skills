@@ -53,7 +53,7 @@ def test_multi_column_root_on_top():
         assert leaf["height"] == cfg.leaf_h
     expected_width = (
         2 * cfg.margin_x
-        + layout.column_count * (cfg.chapter_w + 115 + cfg.leaf_w)
+        + layout.column_count * (cfg.chapter_w + cfg.branch_spacing + cfg.leaf_w)
         + (layout.column_count - 1) * cfg.col_gap
     )
     assert abs(layout.image_width - expected_width) < 1
@@ -83,5 +83,5 @@ def test_single_column_root_on_left():
     for leaf in _collect_leaves(layout.root_node):
         assert leaf["width"] == cfg.leaf_w
         assert leaf["height"] == cfg.leaf_h
-    expected_width = 2 * cfg.margin_x + cfg.root_w + 60 + cfg.chapter_w + 115 + cfg.leaf_w
+    expected_width = 2 * cfg.margin_x + cfg.root_w + cfg.root_to_chapter_gap + cfg.chapter_w + cfg.branch_spacing + cfg.leaf_w
     assert abs(layout.image_width - expected_width) < 1
