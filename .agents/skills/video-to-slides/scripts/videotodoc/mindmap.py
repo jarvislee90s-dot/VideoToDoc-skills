@@ -3,9 +3,14 @@ from __future__ import annotations
 import shutil
 import subprocess
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from .document import ensure_mindmap_link, markdown_to_docx
 from .utils import VideoToDocError
+
+if TYPE_CHECKING:
+    from PIL import ImageDraw
+    from .mindmap_layout import LayoutConfig, LayoutNode, MindmapLayout
 
 
 def render_mindmap_and_refresh_docs(run_dir: Path, mindmap_path: Path | None = None, image_path: Path | None = None) -> tuple[Path, list[Path]]:
@@ -103,26 +108,56 @@ def _render_mindmap_with_python(mindmap_path: Path, image_path: Path) -> None:
     if not root:
         raise VideoToDocError(f"mindmap.mmd 没有可渲染节点：{mindmap_path}")
 
-    font = _load_font(30)
-    small_font = _load_font(24)
-    margin_x = 90
-    margin_y = 70
-    level_gap = 410
-    row_gap = 88
-    box_h = 58
-    leaf_count = _count_leaves(root)
-    max_level = _max_level(root)
-    width = margin_x * 2 + (max_level + 1) * level_gap + 280
-    height = margin_y * 2 + leaf_count * row_gap
-    image = Image.new("RGB", (max(width, 1500), max(height, 800)), "white")
-    draw = ImageDraw.Draw(image)
-    cursor = [0]
-    _assign_positions(root, margin_x, margin_y, level_gap, row_gap, cursor)
-    _draw_edges(draw, root)
-    _draw_nodes(draw, root, font, small_font, box_h)
+    _render_mindmap_with_python_from_tree(root, image_path)
 
+
+def _render_mindmap_with_python_from_tree(root: _MindmapNode, image_path: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont  # type: ignore
+    from .mindmap_layout import LayoutConfig, MindmapLayout, compute_layout
+
+    cfg = LayoutConfig()
+    layout = compute_layout(root, cfg)
+    img = Image.new("RGB", (int(layout.image_width), int(layout.image_height)), "white")
+    draw = ImageDraw.Draw(img)
+    font_root = _load_font(14)
+    font_chapter = _load_font(12)
+    font_leaf = _load_font(10)
+    _draw_layout_node(draw, layout.root_node, font_root, font_chapter, font_leaf)
     image_path.parent.mkdir(parents=True, exist_ok=True)
-    image.save(image_path)
+    img.save(image_path)
+
+
+def _draw_layout_node(draw: ImageDraw.ImageDraw, node: LayoutNode, font_root, font_chapter, font_leaf) -> None:
+    x, y, w, h = node["x"], node["y"], node["width"], node["height"]
+    level = node["level"]
+    if level == 0:
+        fill, outline, font, color = "#4caf50", "#4caf50", font_root, "white"
+        radius = 10
+    elif level == 1:
+        fill, outline, font, color = "#dbeafe", "#1c60af", font_chapter, "#1f2937"
+        radius = 8
+    else:
+        fill, outline, font, color = "#f8fafc", "#cbd5e1", font_leaf, "#1f2937"
+        radius = 5
+
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=fill, outline=outline, width=2 if level <= 1 else 1)
+    text = _wrap_text(node["text"], 12 if level == 0 else (10 if level == 1 else 9))
+    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=2)
+    text_h = bbox[3] - bbox[1]
+    draw.multiline_text((x + w / 2, y + h / 2 - text_h / 2), text, fill=color, font=font, spacing=2, anchor="mm")
+
+    for child in node["children"]:
+        _draw_connection(draw, node, child)
+        _draw_layout_node(draw, child, font_root, font_chapter, font_leaf)
+
+
+def _draw_connection(draw: ImageDraw.ImageDraw, parent: LayoutNode, child: LayoutNode) -> None:
+    px = parent["x"] + parent["width"]
+    py = parent["y"] + parent["height"] / 2
+    cx = child["x"]
+    cy = child["y"] + child["height"] / 2
+    mid_x = (px + cx) / 2
+    draw.line([(px, py), (mid_x, py), (mid_x, cy), (cx, cy)], fill="#aac2e6", width=2, joint="curve")
 
 
 class _MindmapNode:
@@ -167,72 +202,6 @@ def _parse_mermaid_tree(text: str) -> _MindmapNode | None:
         else:
             stack.append(node)
     return root
-
-
-def _count_leaves(node: _MindmapNode) -> int:
-    if not node.children:
-        return 1
-    return sum(_count_leaves(child) for child in node.children)
-
-
-def _max_level(node: _MindmapNode) -> int:
-    if not node.children:
-        return node.level
-    return max(_max_level(child) for child in node.children)
-
-
-def _assign_positions(
-    node: _MindmapNode,
-    margin_x: int,
-    margin_y: int,
-    level_gap: int,
-    row_gap: int,
-    cursor: list[int],
-) -> None:
-    node.x = margin_x + node.level * level_gap
-    if not node.children:
-        node.y = margin_y + cursor[0] * row_gap
-        cursor[0] += 1
-        return
-    for child in node.children:
-        _assign_positions(child, margin_x, margin_y, level_gap, row_gap, cursor)
-    node.y = sum(child.y for child in node.children) // len(node.children)
-
-
-def _draw_edges(draw: object, node: _MindmapNode) -> None:
-    parent_rect = _node_rect(node)
-    for child in node.children:
-        child_rect = _node_rect(child)
-        draw.line(
-            (
-                parent_rect[2],
-                (parent_rect[1] + parent_rect[3]) // 2,
-                child_rect[0],
-                (child_rect[1] + child_rect[3]) // 2,
-            ),
-            fill="#9cb8df",
-            width=3,
-        )
-        _draw_edges(draw, child)
-
-
-def _draw_nodes(draw: object, node: _MindmapNode, font: object, small_font: object, box_h: int) -> None:
-    rect = _node_rect(node)
-    fill = "#1c60af" if node.level == 0 else "#eef5ff"
-    outline = "#1c60af" if node.level <= 1 else "#aac2e6"
-    draw.rounded_rectangle(rect, radius=16, fill=fill, outline=outline, width=3)
-    wrapped = _wrap_text(node.text, 13 if node.level == 0 else 15)
-    text_font = font if node.level == 0 else small_font
-    color = "white" if node.level == 0 else "#1f2937"
-    draw.multiline_text((rect[0] + 18, rect[1] + 11), wrapped, fill=color, font=text_font, spacing=2)
-    for child in node.children:
-        _draw_nodes(draw, child, font, small_font, box_h)
-
-
-def _node_rect(node: _MindmapNode) -> tuple[int, int, int, int]:
-    box_w = 280 if node.level == 0 else 320
-    box_h = 58
-    return (node.x, node.y, node.x + box_w, node.y + box_h)
 
 
 def _load_font(size: int):
