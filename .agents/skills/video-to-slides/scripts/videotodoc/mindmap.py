@@ -13,17 +13,22 @@ if TYPE_CHECKING:
     from .mindmap_layout import LayoutConfig, LayoutNode, MindmapLayout
 
 
-def render_mindmap_and_refresh_docs(run_dir: Path, mindmap_path: Path | None = None, image_path: Path | None = None) -> tuple[Path, list[Path]]:
+def render_mindmap_and_refresh_docs(
+    run_dir: Path,
+    mindmap_path: Path | None = None,
+    image_path: Path | None = None,
+    use_mermaid: bool = False,
+) -> tuple[Path, list[Path]]:
     run_dir = run_dir.resolve()
     mindmap_path = mindmap_path or (run_dir / "mindmap.mmd")
     image_path = image_path or (run_dir / "mindmap.png")
     if not mindmap_path.exists():
         raise VideoToDocError(f"找不到 Mermaid 源文件：{mindmap_path}")
 
-    mmdc = _find_mmdc()
-    try:
+    if use_mermaid:
+        mmdc = _find_mmdc()
         _run_mmdc([mmdc, "-i", str(mindmap_path), "-o", str(image_path), "-b", "transparent"])
-    except VideoToDocError:
+    else:
         _render_mindmap_with_python(mindmap_path, image_path)
 
     refreshed: list[Path] = []

@@ -87,6 +87,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     mindmap = subparsers.add_parser("render-mindmap", help="渲染 mindmap.mmd 并刷新 Word")
     mindmap.add_argument("run_dir", type=Path)
+    mindmap.add_argument("--mermaid", action="store_true", help="使用 Mermaid CLI 渲染（默认使用 Python 渲染器）")
 
     return parser
 
@@ -178,7 +179,7 @@ def _process(args: argparse.Namespace) -> int:
 
 
 def _render_mindmap(args: argparse.Namespace) -> int:
-    image_path, refreshed = render_mindmap_and_refresh_docs(args.run_dir)
+    image_path, refreshed = render_mindmap_and_refresh_docs(args.run_dir, use_mermaid=args.mermaid)
     print("思维导图已渲染：")
     print(f"- image: {image_path}")
     for docx_path in refreshed:
