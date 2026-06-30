@@ -41,7 +41,7 @@ def render_mindmap_and_refresh_docs(
         sub_path = parent / f"{stem}_{index:02d}.mmd"
         png_path = parent / f"{stem}_{index:02d}{suffix}"
         sub_path.write_text(prepared, encoding="utf-8")
-        _run_mmdc([mmdc, "-i", str(sub_path), "-o", str(png_path), "-b", "transparent"])
+        _run_mmdc([mmdc, "-i", str(sub_path), "-o", str(png_path), "-b", "transparent", "-w", "2400"])
         _verify_png_size(png_path)
         image_paths.append(png_path)
 
