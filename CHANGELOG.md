@@ -5,6 +5,21 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.3.0] - 2026-06-30
+
+### Changed
+
+- 思维导图渲染从 Pillow 手绘目录树布局改为 Mermaid CLI (`mmdc`) 的 `tidy-tree` 布局
+- 移除 `--mermaid` 参数，Mermaid 渲染成为唯一渲染方式
+- 1 级章节标题自动添加序号（如 `1. 基础概念`）
+- 思维导图不再按章节拆分为多张 PNG，统一输出单张 `<视频标题>_思维导图_<时间戳>.png`
+- 移除 Python 布局引擎 `mindmap_layout.py`、校验模块 `mindmap_verify.py` 及对应测试
+
+### Added
+
+- 新增 `mindmap_mermaid.py`：`.mmd` 预处理（`tidy-tree` frontmatter、章节序号）
+- 新增 `test_mindmap_mermaid.py`、`test_mindmap_render.py`、`test_mindmap_verification.py` 覆盖 Mermaid 渲染链路
+
 ## [0.2.0] - 2026-06-18
 
 ### Changed

@@ -65,6 +65,9 @@ python3 .agents/skills/feishu-markdown-publish/scripts/publish.py 讲义.md
 
 ```bash
 pip install mlx-whisper python-docx Pillow curl_cffi yt-dlp
+
+# 思维导图渲染需要 mermaid-cli
+npm install -g @mermaid-js/mermaid-cli
 ```
 
 ## 使用
