@@ -44,3 +44,30 @@ def test_ensure_mindmap_link_replaces_existing_multiple_images():
         assert "![思维导图](new_02.png)" in text
         assert "old_01.png" not in text
         assert "old_02.png" not in text
+
+
+def test_generate_mindmap_adds_chapter_numbers(tmp_path: Path):
+    from videotodoc.document import generate_mindmap
+    from videotodoc.models import Section
+
+    sections = [
+        Section(slide_index=1, image_path="", start_ms=0, end_ms=1000, capture_ms=500, transcript="第一页内容", segment_indexes=[0]),
+        Section(slide_index=2, image_path="", start_ms=1000, end_ms=2000, capture_ms=1500, transcript="第二页内容", segment_indexes=[1]),
+    ]
+    out = tmp_path / "mindmap.mmd"
+    generate_mindmap("测试", sections, out)
+    text = out.read_text(encoding="utf-8")
+    assert "1. 第 1 页" in text
+    assert "2. 第 2 页" in text
+
+
+def test_generate_mindmap_keeps_root_syntax_valid(tmp_path: Path):
+    from videotodoc.document import generate_mindmap
+    from videotodoc.models import Section
+
+    sections = [Section(slide_index=1, image_path="", start_ms=0, end_ms=1000, capture_ms=500, transcript="内容", segment_indexes=[0])]
+    out = tmp_path / "mindmap.mmd"
+    generate_mindmap("Git(Hub): 核心概念", sections, out)
+    text = out.read_text(encoding="utf-8")
+    assert "root((" in text
+    assert "root（（" not in text
