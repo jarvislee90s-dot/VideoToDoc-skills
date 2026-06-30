@@ -211,12 +211,12 @@ def generate_mindmap(title: str, sections: list[Section], output_path: Path, set
                 raise
 
     lines = ["mindmap", f"  root(({_safe_mermaid(title)}))"]
-    for index, section in enumerate(sections[:20], start=1):
+    for section in sections[:20]:
         heading = _extract_heading(section.transcript, section.slide_index)
-        lines.append(f"    {index}. 第 {section.slide_index} 页")
+        lines.append(f"    第 {section.slide_index} 页")
         lines.append(f"      {_safe_mermaid(heading)}")
     if len(sections) > 20:
-        lines.append(f"    {len(sections[:20]) + 1}. 更多页面")
+        lines.append(f"    更多页面")
         lines.append(f"      共 {len(sections)} 页，详见正文")
     mindmap = "\n".join(lines)
     write_text(output_path, mindmap)

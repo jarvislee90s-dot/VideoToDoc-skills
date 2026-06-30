@@ -5,11 +5,20 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 from _project import find_project_dir, project_python
+
+
+def _infer_run_dir(video_path: Path) -> Path | None:
+    """当视频路径本身位于 runs/<标题>_<时间戳>/ 下时，自动推断复用该 run_dir。"""
+    parent = video_path.parent
+    if re.fullmatch(r".+_\d{8}_\d{6}", parent.name):
+        return parent
+    return None
 
 
 def main() -> int:
@@ -45,6 +54,15 @@ def main() -> int:
         print(f"   python3 .agents/skills/video-summary/scripts/process.py '<视频URL>'")
         return 2
 
+    # 自动推断 run_dir：当视频位于 video-summary 生成的 runs/<标题>_<时间戳>/ 目录下时，
+    # 默认复用该目录，避免产生第二个文件夹。
+    run_dir = args.run_dir
+    if run_dir is None:
+        inferred = _infer_run_dir(video_path)
+        if inferred is not None:
+            run_dir = inferred
+            print(f"   自动复用 run_dir: {run_dir}")
+
     project_dir = find_project_dir(args.project_dir, video_path)
     python_bin = project_python(project_dir)
 
@@ -69,8 +87,8 @@ def main() -> int:
         cmd.append("--keep-all-candidates")
     if args.no_ocr_dedupe:
         cmd.append("--no-ocr-dedupe")
-    if args.run_dir is not None:
-        cmd += ["--run-dir", str(args.run_dir)]
+    if run_dir is not None:
+        cmd += ["--run-dir", str(run_dir)]
     if args.ocr_similarity_threshold is not None:
         cmd += ["--ocr-similarity-threshold", str(args.ocr_similarity_threshold)]
     if args.duplicate_change_threshold is not None:

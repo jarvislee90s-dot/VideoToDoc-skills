@@ -155,6 +155,13 @@ runs/<视频标题>_<时间戳>/
 ## 与其他 Skill 的关系
 
 - **video-to-slides**：本 Skill 的产物（video + audio + transcript）可直接作为 video-to-slides 的输入。当 video-to-slides 发现缺少视频/音频/字幕时，会建议用户先运行本 Skill。
+  ```bash
+  # 推荐：复用同一个 run_dir，避免 video-to-slides 再新建文件夹
+  python3 .agents/skills/video-to-slides/scripts/process.py \
+    "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
+    --transcript "runs/<视频标题>_<时间戳>/transcript.json" \
+    --run-dir "runs/<视频标题>_<时间戳>"
+  ```
 - **feishu-markdown-publish**：如果用户想将 summary.md 发布到飞书，可使用该 Skill。
 
 ## 代理配置

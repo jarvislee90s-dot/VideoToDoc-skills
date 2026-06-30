@@ -189,9 +189,11 @@ python3 scripts/restore_images.py \
 python3 .agents/skills/video-to-slides/scripts/process.py "/path/to/<视频标题>.mp4"
 
 # 指定已有转录（推荐：从 video-summary 产物直接引用）
+# 强烈建议同时传 --run-dir，让产物继续落在 video-summary 的目录里，避免产生第二个文件夹。
 python3 .agents/skills/video-to-slides/scripts/process.py \
   "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
-  --transcript "runs/<视频标题>_<时间戳>/transcript.json"
+  --transcript "runs/<视频标题>_<时间戳>/transcript.json" \
+  --run-dir "runs/<视频标题>_<时间戳>"
 
 # 手工修改思维导图后刷新
 python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标题>_<时间戳>
@@ -265,3 +267,4 @@ runs/<视频标题>_<时间戳>/
 2. 不要只用 dHash 判断白底 PPT，容易误合并
 3. 不要把 key 写进 Skill；飞书依赖本机 lark-cli
 4. 不批量删除文件或目录；产物保留在 `runs/` 下
+5. 复用 `video-summary` 的产物时，建议显式传 `--run-dir`；若视频路径位于 `runs/<标题>_<时间戳>/` 下，脚本会自动推断并复用该目录

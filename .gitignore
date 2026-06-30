@@ -21,4 +21,6 @@ tmp/
 .tools/
 .venv
 .claude/
-.superpowers/sdd/
+.superpowers/*
+!.superpowers/sdd/
+.trae/
