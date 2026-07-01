@@ -91,25 +91,50 @@ const DEMO_DATA = {
     {kind: "output", label: "已发布", detail: "飞书云文档链接", sub: "bcniplbzchv5.feishu.cn/docx/..."},
     {kind: "agent", label: "全部完成", detail: "视频已转为图文讲义并发布到飞书"}
   ],
-  outputs: {
-    summary: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_总结_20260630_231231.md",
-    lecture: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_整理版_20260630_232710.md",
-    mindmap: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_思维导图_渲染_20260630_232710.png",
-    transcript: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/transcript.json",
-    docx: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_20260630_232710.docx",
-    slides: [
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0001.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0005.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0010.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0015.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0020.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0030.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0040.png",
-      "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0050.png"
-    ],
-    feishu: "https://bcniplbzchv5.feishu.cn/docx/VtMldBO8koF4xTxuOQlck9Zfn2e"
-  }
+  outputs: null // 运行时从 manifest.json 加载，失败时回退到 FALLBACK_OUTPUTS
 };
+
+// 硬编码回退：当 file:// 打开或 manifest.json 不可用时使用
+const FALLBACK_OUTPUTS = {
+  summary: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_总结_20260630_231231.md",
+  lecture: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_整理版_20260630_232710.md",
+  mindmap: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_思维导图_渲染_20260630_232710.png",
+  transcript: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/transcript.json",
+  docx: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_20260630_232710.docx",
+  slides: [
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0001.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0005.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0010.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0015.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0020.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0030.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0040.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0050.png"
+  ],
+  feishu: "https://bcniplbzchv5.feishu.cn/docx/VtMldBO8koF4xTxuOQlck9Zfn2e"
+};
+
+/** 从 manifest.json 加载产物链接，失败时使用硬编码回退 */
+async function loadOutputs() {
+  if (DEMO_DATA.outputs) return;
+  try {
+    const res = await fetch("../../demo-assets/spacex/manifest.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const manifest = await res.json();
+    DEMO_DATA.outputs = {
+      summary: manifest.summary,
+      lecture: manifest.lecture,
+      mindmap: manifest.mindmap,
+      transcript: manifest.transcript,
+      docx: manifest.docx,
+      slides: manifest.slides,
+      feishu: manifest.feishuUrl
+    };
+  } catch (err) {
+    console.warn("manifest 加载失败，使用硬编码回退", err);
+    DEMO_DATA.outputs = FALLBACK_OUTPUTS;
+  }
+}
 
 const AgentChat = {
   start() {
@@ -138,6 +163,8 @@ const AgentChat = {
 document.getElementById("startBtn").addEventListener("click", async () => {
   const btn = document.getElementById("startBtn");
   btn.disabled = true;
+  btn.textContent = "加载配置...";
+  await loadOutputs(); // 确保产物链接已加载再开始演示
   btn.textContent = "运行中...";
   AgentChat.start();
   NodeFlow.render();
