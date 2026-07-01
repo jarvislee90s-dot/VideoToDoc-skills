@@ -10,10 +10,13 @@ build/
 dist/
 runs/
 tmp/
-/scripts/
+/scripts/*
+!/scripts/generate_demo_manifest.py
+!/scripts/validate_demo.py
 /docs/*
 !/docs/superpowers/
 !/docs/superpowers/specs/
+!/docs/trae-competition/
 *.wav
 *.m4a
 *.aac
