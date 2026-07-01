@@ -5,7 +5,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_shared"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from review_merge import review_groups  # noqa: E402
+from review_merge import review_groups, _parse_range, main  # noqa: E402
 
 
 class TestReviewGroups:
@@ -52,3 +52,42 @@ class TestReviewGroups:
         report = review_groups(segs, groups, constraints)
         assert report["pass"] is True
         assert report["issues"] == []
+
+
+class TestParseRange:
+    def test_string_range(self):
+        assert _parse_range("30-120", 0, 9999) == {"min": 30, "max": 120}
+
+    def test_dict_range(self):
+        assert _parse_range({"min": 50, "max": 180}, 0, 9999) == {"min": 50, "max": 180}
+
+    def test_default_fallback(self):
+        assert _parse_range(None, 1, 999) == {"min": 1, "max": 999}
+
+
+class TestMain:
+    def test_main_reads_merge_input_and_writes_report(self, tmp_path):
+        transcript = tmp_path / "transcript.json"
+        transcript.write_text(json.dumps([{"text": "价格基本都暴涨了"}, {"text": "300%到500%"}]), encoding="utf-8")
+
+        groups = tmp_path / "merged_groups.json"
+        groups.write_text(json.dumps([
+            {"indices": [0], "text": "价格基本都暴涨了"},
+            {"indices": [1], "text": "300%到500%"},
+        ]), encoding="utf-8")
+
+        merge_input = tmp_path / "merge_input.json"
+        merge_input.write_text(json.dumps({
+            "suggestion": {
+                "per_group_range": "1-8",
+                "chars_per_group_range": "30-120",
+            }
+        }), encoding="utf-8")
+
+        out = tmp_path / "report.json"
+        rc = main(str(transcript), str(groups), str(out))
+        assert rc == 1
+
+        report = json.loads(out.read_text(encoding="utf-8"))
+        assert report["total_groups"] == 2
+        assert any(i["type"] == "syntax_break" for i in report["issues"])

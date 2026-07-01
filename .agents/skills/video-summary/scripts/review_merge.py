@@ -23,13 +23,12 @@ _SYNTAX_HINT_ENDINGS = (
     "上涨", "下降", "增长", "减少", "暴涨", "暴跌", "增加", "降低", "达到", "为", "是", "了", "到"
 )
 
-_NUMBER_LIKE_RE = re.compile(r"^[\d%.．．一二三四五六七八九十百千万亿]+|^\d+倍|^翻了")
+_NUMBER_LIKE_RE = re.compile(r"^[\d%.．一二三四五六七八九十百千万亿]+|^\d+倍|^翻了")
 
 
 def _looks_like_complement(text: str) -> bool:
     """判断短句是否像是对前句的数量/程度补语。"""
-    t = text.strip()
-    return bool(_NUMBER_LIKE_RE.match(t)) or t.endswith(("%", "倍"))
+    return bool(_NUMBER_LIKE_RE.match(text.strip()))
 
 
 def _has_syntax_break(prev_group_text: str, next_group_first_text: str) -> bool:
