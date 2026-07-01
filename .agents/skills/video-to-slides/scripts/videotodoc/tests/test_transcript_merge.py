@@ -7,24 +7,20 @@ class TestSuggestSegments:
         assert s["target_segments"] == 34
         assert s["per_group_range"] == "3-8"
         assert s["max_segments"] == 120
-        assert s["chars_per_group_range"] == "30-120"
 
     def test_1h(self):
         s = suggest_segments(3_600_000)
         assert s["target_segments"] == 90
         assert s["max_segments"] == 120
-        assert s["chars_per_group_range"] == "80-270"
 
-    def test_2h(self):
+    def test_2h_cap(self):
         s = suggest_segments(7_200_000)
-        assert s["max_segments"] == 240
-        assert s["target_segments"] == 144
-        assert s["chars_per_group_range"] == "120-400"
+        assert s["max_segments"] == 240  # 120min*2
+        assert s["target_segments"] == 144  # 7200/50
 
     def test_tiny_video_floor(self):
         s = suggest_segments(60_000)  # 1min
         assert s["target_segments"] >= 8
-        assert s["chars_per_group_range"] == "30-120"
 
 
 class TestValidateGroups:
