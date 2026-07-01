@@ -76,9 +76,19 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
    分号（并列长句）、问号/感叹号（原句语气）、冒号（引出）。保留原问号感叹号。
 3. **同话题聚合（最高优先级）**：描述同一件事/同一话题的相邻短句必须整到一段。
    话题转换处断段。宁可段数偏离目标，也要保证同话题完整。
-4. **段数软目标**：参考 suggestion.target_segments 和 per_group_range。
-   段数是软目标——同话题完整优先于凑段数。硬上限 max_segments 不可超。
-5. **索引完整**：indices 从 0 连续到末尾，覆盖全部短句，不重不漏；每段内连续递增。
+4. **句法完整性（最高优先级）**：禁止把一个完整句子的依存成分拆到两段。
+   以下情况必须并入同一段：
+   - 程度/数量补语：如“价格暴涨了”与“300%到500%”；
+   - 数量宾语：如“达到了”与“50亿美元”；
+   - 时间/地点状语紧接说明：如“发生在”与“2024年”；
+   - 列举项：同一组并列数据或例子不要拆散。
+5. **段数软目标**：参考 `suggestion.target_segments` 和 `suggestion.per_group_range`。
+   段数是软目标——同话题完整优先于凑段数。硬上限 `max_segments` 不可超。
+6. **每段短句数约束**：尽量使每段包含的短句数落在 `suggestion.per_group_range` 范围内。
+   若同话题较长，允许超出，但需在输出前自检并说明理由。
+7. **每段字数区间**：每段合并后的中文字符数（含标点）建议落在 `suggestion.chars_per_group_range` 区间内。
+   该区间是柔性参考，同话题完整优先；若必须超出，优先在同话题内部切分，而非强行压缩或跨话题拆断。
+8. **索引完整**：indices 从 0 连续到末尾，覆盖全部短句，不重不漏；每段内连续递增。
 
 **示例**：
 输入：0.Harness这个词最近大火 1.但好像很少有人能说出它的准确定义
@@ -93,7 +103,60 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 所以你整理长句时个别字误差不会报错；只有 index 漏号/跳号/重复才报错，
 且报错精确到具体分组，只需修正出错分组重写文件重跑。
 
-7. **Agent 摘要**：
+### ⑤.6 Review Agent 复核合并质量
+
+**背景**：整理 agent 第一次合并可能忽略句法依存或字数约束。由另一个独立上下文的 review agent 检查 `merged_groups.json`，输出 `merge_review_report.json`，整理 agent 根据报告局部修正。review agent 不直接修改 `merged_groups.json`，只输出意见；分段决策权始终在 agent。
+
+**步骤**：
+1. 整理 agent 完成首次合并后，运行客观检查脚本生成初步报告：
+   python3 .agents/skills/video-summary/scripts/review_merge.py \
+     runs/<run_dir>/transcript.json runs/<run_dir>/merged_groups.json
+2. review agent 读取：
+   - `runs/<run_dir>/merge_input.json`（原始短句 + suggestion 约束）
+   - `runs/<run_dir>/merged_groups.json`（整理 agent 输出）
+   - `runs/<run_dir>/merge_review_report.json`（客观检查初步结果）
+3. review agent 按以下清单复核，输出增强版 `merge_review_report.json`：
+   - **句法完整性**：相邻段边界是否把补语/数据/宾语拆散；
+   - **同话题聚合**：同一话题是否被不必要地切到两段；
+   - **短句数**：每段是否尽量落在 `per_group_range` 内；
+   - **字数**：每段是否尽量落在 `chars_per_group_range` 内；
+   - **原始短句索引**：是否连续覆盖、无跳号。
+4. review report 格式示例：
+   {
+     "total_groups": 69,
+     "issues": [
+       {
+         "group_index": 6,
+         "type": "syntax_break",
+         "severity": "critical",
+         "description": "第6段结尾'价格基本都暴涨了'与第7段开头'300%到500%'是依存关系，应并入同一段",
+         "suggested_fix": "整理 agent 将 index 83 并入第7段，或将 index 84-86 并入第6段"
+       }
+     ],
+     "pass": false
+   }
+
+**review agent 规则**：
+- 只输出报告，不直接修改 `merged_groups.json`。
+- critical 问题必须标记；warning 问题允许整理 agent 酌情处理。
+- 所有判断必须基于 `merge_input.json` 中的约束数据，不能自行放宽。
+- 遇到超出 `chars_per_group_range` 或 `per_group_range` 的段，先判断是否为“同话题完整”导致；若是，可接受为 warning；若不是，应建议切分。
+
+### ⑤.7 整理 agent 根据 Review Report 修正
+
+**步骤**：
+1. 读取 `merge_review_report.json`；
+2. 只修改 report 中标记的问题分组，其余分组保持不变；
+3. 修正后重跑 `apply_merge.py` 校验 index；
+4. 再次运行 `review_merge.py` 与 review agent，直到 `pass` 为 true 或只剩可接受的 warning；
+5. 最终产物为 `transcript_merged.json`。
+
+**修正原则**：
+- critical 的 `syntax_break` 必须修复；
+- `group_size_exceeded` / `chars_above_max` / `chars_below_min` 优先通过“在同话题内部切分/合并”解决，不要跨话题拆断；
+- 若某段因同话题完整而必须超出区间，保留并说明理由。
+
+8. **Agent 摘要**：
    - Agent 读取 `transcript.txt`（合并后的 `transcript_merged.json` 优先）
    - 生成 `<视频标题>_总结_<时间戳>.md`：
      - 提取核心观点和关键信息
