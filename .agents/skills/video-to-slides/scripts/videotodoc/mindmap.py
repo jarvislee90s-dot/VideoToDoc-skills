@@ -17,14 +17,17 @@ def render_mindmap_and_refresh_docs(
     image_path: Path | None = None,
     use_mermaid: bool = False,
 ) -> tuple[list[Path], list[Path]]:
-    """使用 Mermaid tidy-tree 渲染思维导图，并刷新所有 Markdown/Word 文档。"""
+    """使用 Mermaid tidy-tree 渲染思维导图，并生成/刷新所有 Markdown/Word 文档。"""
     del use_mermaid  # 已废弃，保留参数兼容性
 
     run_dir = run_dir.resolve()
     mindmap_path = mindmap_path or (run_dir / "mindmap.mmd")
     image_path = image_path or (run_dir / "mindmap.png")
     if not mindmap_path.exists():
-        raise VideoToDocError(f"找不到 Mermaid 源文件：{mindmap_path}")
+        raise VideoToDocError(
+            f"找不到 Mermaid 源文件：{mindmap_path}。"
+            "请先完成 Agent 整理步骤并编写 mindmap.mmd，再运行此脚本。"
+        )
 
     raw_text = mindmap_path.read_text(encoding="utf-8")
     numbered = add_chapter_numbers(raw_text)
@@ -44,12 +47,22 @@ def render_mindmap_and_refresh_docs(
         if "质量报告" in md_file.name:
             continue
         ensure_mindmap_link(md_file, image_paths)
-        docx_file = md_file.with_suffix(".docx")
-        if docx_file.exists():
-            generated = markdown_to_docx(md_file, docx_file)
-            if generated:
-                refreshed.append(generated)
+        docx_file = _docx_path_for_markdown(md_file)
+        generated = markdown_to_docx(md_file, docx_file)
+        if generated:
+            refreshed.append(generated)
+    # 当紧凑版与原始 Markdown 映射到同一个 docx 时，避免重复报告
+    refreshed = list(dict.fromkeys(refreshed))
     return image_paths, refreshed
+
+
+def _docx_path_for_markdown(md_path: Path) -> Path:
+    """保持旧命名约定：紧凑版 Markdown 对应 _讲义_.docx，整理版保持同名。"""
+    name = md_path.stem
+    if "_讲义_紧凑版_" in name:
+        slug, ts = name.split("_讲义_紧凑版_", 1)
+        return md_path.with_name(f"{slug}_讲义_{ts}.docx")
+    return md_path.with_suffix(".docx")
 
 
 def _verify_png_size(png_path: Path, max_size: int = 8000) -> None:
