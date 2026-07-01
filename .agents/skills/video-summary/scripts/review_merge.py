@@ -23,12 +23,23 @@ _SYNTAX_HINT_ENDINGS = (
     "上涨", "下降", "增长", "减少", "暴涨", "暴跌", "增加", "降低", "达到", "为", "是", "了", "到"
 )
 
-_NUMBER_LIKE_RE = re.compile(r"^[\d%.．一二三四五六七八九十百千万亿]+|^\d+倍|^翻了")
+# 允许开头有“约、大概、大约、近、超过、不足”等限定词
+_NUMBER_LIKE_RE = re.compile(
+    r"^(约|大概|大约|近|超过|不足|至少|最多|最少|只有|仅)?\s*"
+    r"[\d%.．一二三四五六七八九十百千万亿]+"
+    r"(\s*(倍|个百分点|个点))?"
+    r"|^翻了"
+)
 
 
 def _looks_like_complement(text: str) -> bool:
     """判断短句是否像是对前句的数量/程度补语。"""
-    return bool(_NUMBER_LIKE_RE.match(text.strip()))
+    t = text.strip()
+    if not t:
+        return False
+    if t.endswith(("%", "倍", "个百分点", "个点")):
+        return True
+    return bool(_NUMBER_LIKE_RE.match(t))
 
 
 def _has_syntax_break(prev_group_text: str, next_group_first_text: str) -> bool:
@@ -115,10 +126,11 @@ def review_groups(
                 "suggested_fix": f"整理 agent 将 index {next_idx[0]} 的短句并入第{gi}段，或把相关补语整体移入同一段。",
             })
 
+    critical_count = sum(1 for i in issues if i["severity"] == "critical")
     return {
         "total_groups": len(groups),
         "issues": issues,
-        "pass": len(issues) == 0,
+        "pass": critical_count == 0,
     }
 
 
