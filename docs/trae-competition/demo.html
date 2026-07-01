@@ -61,5 +61,45 @@ input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);bor
     <p><a href="https://github.com/jarvislee90s-dot/VideoToDoc-skills" target="_blank">GitHub</a> · <a href="https://forum.trae.cn/t/topic/30174" target="_blank">报名帖</a></p>
   </footer>
 </div>
+<script>
+const DEMO_DATA = {
+  chatScript: [
+    {role: "user", text: "帮我整理这个 SpaceX 上市视频： https://www.youtube.com/watch?v=SpaceX..."},
+    {role: "agent", text: "收到。我将依次调用 video-summary、video-to-slides、feishu-markdown-publish 三个 Skill 完成处理。"},
+    {role: "agent", text: "首先读取 video-summary/SKILL.md，了解转录与摘要流程。"},
+    {role: "agent", text: "开始执行 process.py，下载视频并生成 transcript.json 与总结。"},
+    {role: "agent", text: "video-summary 完成。接下来读取 video-to-slides/SKILL.md。"},
+    {role: "agent", text: "正在截图、去重、图文对齐，生成讲义与思维导图。"},
+    {role: "agent", text: "video-to-slides 完成。最后读取 feishu-markdown-publish/SKILL.md。"},
+    {role: "agent", text: "已将讲义发布到飞书云文档，全部完成。"}
+  ]
+};
+
+const AgentChat = {
+  start() {
+    const el = document.getElementById("chat");
+    el.style.display = "block";
+    let i = 0;
+    const next = () => {
+      if (i >= DEMO_DATA.chatScript.length) return;
+      const msg = DEMO_DATA.chatScript[i++];
+      const div = document.createElement("div");
+      div.style.cssText = `margin-bottom:12px;display:flex;${msg.role === "agent" ? "justify-content:flex-end" : ""}`;
+      const bubble = document.createElement("div");
+      bubble.textContent = msg.text;
+      bubble.style.cssText = msg.role === "agent"
+        ? "background:#fff0f4;border:1px solid #FB7299;color:#18191C;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px"
+        : "background:#f4f5f7;border:1px solid #e3e5e7;color:#18191C;border-radius:12px 12px 12px 0;padding:10px 14px;max-width:80%;font-size:13px";
+      div.appendChild(bubble);
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+      setTimeout(next, 1200);
+    };
+    next();
+  }
+};
+
+document.getElementById("startBtn").addEventListener("click", () => AgentChat.start());
+</script>
 </body>
 </html>
