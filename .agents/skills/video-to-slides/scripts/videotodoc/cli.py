@@ -165,7 +165,8 @@ def _process(args: argparse.Namespace) -> int:
         print(f"- compact_markdown: {result.compact_markdown_path}")
     if result.semantic_markdown_path:
         print(f"- semantic_markdown: {result.semantic_markdown_path}")
-    print(f"- mindmap: {result.mindmap_path}")
+    if result.mindmap_path:
+        print(f"- mindmap: {result.mindmap_path}")
     if result.mindmap_image_path:
         print(f"- mindmap_image: {result.mindmap_image_path}")
     if result.docx_path:
