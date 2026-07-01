@@ -49,12 +49,12 @@ class TestReviewGroups:
 
     def test_syntax_break_number(self):
         segs = [
-            {"text": "价格基本都暴涨了"},
+            {"text": "价格基本都暴涨"},
             {"text": "300%到500%"},
             {"text": "最夸张的"},
         ]
         groups = [
-            {"indices": [0], "text": "价格基本都暴涨了"},
+            {"indices": [0], "text": "价格基本都暴涨"},
             {"indices": [1, 2], "text": "300%到500%，最夸张的"},
         ]
         constraints = {"per_group_range": {"min": 1, "max": 8}, "chars_per_group_range": {"min": 30, "max": 120}}
@@ -68,6 +68,20 @@ class TestReviewGroups:
         report = review_groups(segs, groups, constraints)
         assert report["pass"] is True
         assert report["issues"] == []
+
+    def test_high_frequency_words_no_false_positive(self):
+        # "是/了/到/为" 等高频虚词后接数字，不应被误判为 syntax_break
+        segs = [
+            {"text": "这个事情是"},
+            {"text": "2024年"},
+        ]
+        groups = [
+            {"indices": [0], "text": "这个事情是"},
+            {"indices": [1], "text": "2024年"},
+        ]
+        constraints = {"per_group_range": {"min": 1, "max": 8}, "chars_per_group_range": {"min": 10, "max": 120}}
+        report = review_groups(segs, groups, constraints)
+        assert not any(i["type"] == "syntax_break" for i in report["issues"])
 
 
 class TestParseRange:
@@ -84,11 +98,11 @@ class TestParseRange:
 class TestMain:
     def test_main_reads_merge_input_and_writes_report(self, tmp_path):
         transcript = tmp_path / "transcript.json"
-        transcript.write_text(json.dumps([{"text": "价格基本都暴涨了"}, {"text": "300%到500%"}]), encoding="utf-8")
+        transcript.write_text(json.dumps([{"text": "价格基本都暴涨"}, {"text": "300%到500%"}]), encoding="utf-8")
 
         groups = tmp_path / "merged_groups.json"
         groups.write_text(json.dumps([
-            {"indices": [0], "text": "价格基本都暴涨了"},
+            {"indices": [0], "text": "价格基本都暴涨"},
             {"indices": [1], "text": "300%到500%"},
         ]), encoding="utf-8")
 
