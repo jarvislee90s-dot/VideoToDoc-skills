@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .config import Settings
 from .io import write_text
+from .mindmap_mermaid import add_chapter_numbers
 from .models import Section
 
 
@@ -218,7 +219,7 @@ def generate_mindmap(title: str, sections: list[Section], output_path: Path, set
     if len(sections) > 20:
         lines.append(f"    更多页面")
         lines.append(f"      共 {len(sections)} 页，详见正文")
-    mindmap = "\n".join(lines)
+    mindmap = add_chapter_numbers("\n".join(lines))
     write_text(output_path, mindmap)
     return mindmap
 
