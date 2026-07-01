@@ -332,10 +332,9 @@ def process_video(
 
     # 外部 run_dir 复用时，产物文件名和 Markdown 标题使用原始标题；新建 run_dir 时仍用 slug 保证文件系统安全
     file_title = title if run_dir is not None else slugify(title or video_path.stem)
-    dir_slug = slugify(title or video_path.stem)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if run_dir is None:
-        run_dir = runs_dir / f"{dir_slug}_{ts}"
+        run_dir = runs_dir / f"{slugify(title or video_path.stem)}_{ts}"
     cache_dir = run_dir / "cache"
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
