@@ -103,14 +103,16 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 所以你整理长句时个别字误差不会报错；只有 index 漏号/跳号/重复才报错，
 且报错精确到具体分组，只需修正出错分组重写文件重跑。
 
-### ⑤.6 Review Agent 复核合并质量
+### 6.6 Review Agent 复核合并质量
 
 **背景**：整理 agent 第一次合并可能忽略句法依存或字数约束。由另一个独立上下文的 review agent 检查 `merged_groups.json`，输出 `merge_review_report.json`，整理 agent 根据报告局部修正。review agent 不直接修改 `merged_groups.json`，只输出意见；分段决策权始终在 agent。
 
 **步骤**：
 1. 整理 agent 完成首次合并后，运行客观检查脚本生成初步报告：
-   python3 .agents/skills/video-summary/scripts/review_merge.py \
-     runs/<run_dir>/transcript.json runs/<run_dir>/merged_groups.json
+    ```bash
+    python3 .agents/skills/video-summary/scripts/review_merge.py \
+      runs/<run_dir>/transcript.json runs/<run_dir>/merged_groups.json
+    ```
 2. review agent 读取：
    - `runs/<run_dir>/merge_input.json`（原始短句 + suggestion 约束）
    - `runs/<run_dir>/merged_groups.json`（整理 agent 输出）
@@ -122,6 +124,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
    - **字数**：每段是否尽量落在 `chars_per_group_range` 内；
    - **原始短句索引**：是否连续覆盖、无跳号。
 4. review report 格式示例：
+   ```json
    {
      "total_groups": 69,
      "issues": [
@@ -135,6 +138,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
      ],
      "pass": false
    }
+   ```
 
 **review agent 规则**：
 - 只输出报告，不直接修改 `merged_groups.json`。
@@ -142,7 +146,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 - 所有判断必须基于 `merge_input.json` 中的约束数据，不能自行放宽。
 - 遇到超出 `chars_per_group_range` 或 `per_group_range` 的段，先判断是否为“同话题完整”导致；若是，可接受为 warning；若不是，应建议切分。
 
-### ⑤.7 整理 agent 根据 Review Report 修正
+### 6.7 整理 agent 根据 Review Report 修正
 
 **步骤**：
 1. 读取 `merge_review_report.json`；
@@ -156,7 +160,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 - `group_size_exceeded` / `chars_above_max` / `chars_below_min` 优先通过“在同话题内部切分/合并”解决，不要跨话题拆断；
 - 若某段因同话题完整而必须超出区间，保留并说明理由。
 
-8. **Agent 摘要**：
+7. **Agent 摘要**：
    - Agent 读取 `transcript.txt`（合并后的 `transcript_merged.json` 优先）
    - 生成 `<视频标题>_总结_<时间戳>.md`：
      - 提取核心观点和关键信息

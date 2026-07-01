@@ -148,11 +148,14 @@ def main(
     out_path = out_path or str(Path(groups_path).parent / "merge_review_report.json")
     Path(out_path).write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    print(f"  [review] 合并质量客观检查：{len(groups)} 段，发现 {len(report['issues'])} 个问题 -> {out_path}")
+    critical_count = sum(1 for i in report["issues"] if i["severity"] == "critical")
+    warning_count = len(report["issues"]) - critical_count
+    print(f"  [review] 合并质量客观检查：{len(groups)} 段，critical {critical_count} 个，warning {warning_count} 个 -> {out_path}")
     for issue in report["issues"]:
         print(f"    [{issue['severity']}] [{issue['type']}] 第{issue['group_index']}段：{issue['description']}")
 
-    return 0 if report["pass"] else 1
+    # 只有 critical 问题才返回非 0；warning 允许整理 agent 酌情处理，不阻断流程
+    return 0 if critical_count == 0 else 1
 
 
 if __name__ == "__main__":

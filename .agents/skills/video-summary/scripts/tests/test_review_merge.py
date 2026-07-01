@@ -91,3 +91,27 @@ class TestMain:
         report = json.loads(out.read_text(encoding="utf-8"))
         assert report["total_groups"] == 2
         assert any(i["type"] == "syntax_break" for i in report["issues"])
+
+    def test_main_warning_only_returns_zero(self, tmp_path):
+        transcript = tmp_path / "transcript.json"
+        transcript.write_text(json.dumps([{"text": "x"} for _ in range(20)]), encoding="utf-8")
+
+        groups = tmp_path / "merged_groups.json"
+        groups.write_text(json.dumps([
+            {"indices": list(range(20)), "text": "".join("x" for _ in range(20))},
+        ]), encoding="utf-8")
+
+        merge_input = tmp_path / "merge_input.json"
+        merge_input.write_text(json.dumps({
+            "suggestion": {
+                "per_group_range": "3-8",
+                "chars_per_group_range": "30-120",
+            }
+        }), encoding="utf-8")
+
+        out = tmp_path / "report.json"
+        rc = main(str(transcript), str(groups), str(out))
+        assert rc == 0
+
+        report = json.loads(out.read_text(encoding="utf-8"))
+        assert any(i["type"] == "group_size_exceeded" for i in report["issues"])
