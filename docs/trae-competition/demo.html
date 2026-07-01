@@ -28,11 +28,11 @@ body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg
 input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
 @media (max-width:640px){
   .container{padding:var(--s-3)}
-  #config > div[style*="grid"]{grid-template-columns:1fr !important}
-  #flowGrid{grid-template-columns:1fr !important;overflow-x:hidden !important}
-  #flowGrid > div[style*="absolute"]:nth-child(-n+4){display:none !important}
-  #flowGrid > div:nth-child(-n+4){grid-column:1 !important;border-bottom:1px solid #f0f2f7 !important}
-  #outputs div[style*="repeat(4,1fr)"]{grid-template-columns:repeat(2,1fr) !important}
+  .config-grid{grid-template-columns:1fr}
+  .flow-grid{grid-template-columns:1fr;overflow-x:hidden}
+  .flow-grid > .flow-line{display:none}
+  .flow-grid > .flow-header{display:none}
+  .slide-gallery-grid{grid-template-columns:repeat(2,1fr)}
 }
 </style>
 </head>
@@ -47,7 +47,7 @@ input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);bor
 
   <section id="config" class="card" style="margin-bottom:var(--s-4)">
     <div class="lab">Agent 配置</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)">
+    <div class="config-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)">
       <div><label style="font-size:12px;color:var(--hint)">API Key</label><input type="text" value="sk-••••••••••••••••••••" readonly></div>
       <div><label style="font-size:12px;color:var(--hint)">Base URL</label><input type="text" value="https://api.openai.com/v1" readonly></div>
       <div><label style="font-size:12px;color:var(--hint)">模型</label><input type="text" value="gpt-4o" readonly></div>
@@ -204,12 +204,12 @@ const NodeFlow = {
     el.style.display = "block";
     el.innerHTML = `
       <div class="lab">Agent 执行流</div>
-      <div id="flowGrid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden">
-        <div style="position:absolute;left:33.33%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
-        <div style="position:absolute;left:66.66%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
-        <div style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">🤖 AGENT 操作</div>
-        <div style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">⚙️ 脚本执行</div>
-        <div style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">📄 产出文件</div>
+      <div id="flowGrid" class="flow-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden">
+        <div class="flow-line" style="position:absolute;left:33.33%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
+        <div class="flow-line" style="position:absolute;left:66.66%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
+        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">🤖 AGENT 操作</div>
+        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">⚙️ 脚本执行</div>
+        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">📄 产出文件</div>
         ${DEMO_DATA.nodeTimeline.map((step, idx) => this.renderStep(step, idx)).join("")}
       </div>
     `;
@@ -326,7 +326,7 @@ const OutputPanel = {
       </div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">3. 关键截图</h3>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="slide-gallery-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
           ${DEMO_DATA.outputs.slides.map(url => `<img src="${url}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide">`).join("")}
         </div>
       </div>
