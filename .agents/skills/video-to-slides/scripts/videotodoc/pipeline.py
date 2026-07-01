@@ -281,24 +281,25 @@ def finalize_video(
     sections = align_sections(slideset, transcript, sync_offset_ms)
 
     # 生成产物（仅 Markdown，思维导图与 Word 在 Agent 整理后由 render_mindmap.py 生成）
-    slug = confirmed.get("video_title", run_dir.stem)
+    # 优先从 run_dir 名推断原始标题，确保复用 video-summary 目录时产物名与 Markdown 标题一致
+    title = _title_from_run_dir(run_dir)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    markdown_path = run_dir / f"{slug}_讲义_{ts}.md"
-    compact_markdown_path = run_dir / f"{slug}_讲义_紧凑版_{ts}.md"
-    semantic_markdown_path = run_dir / f"{slug}_讲义_整理版_{ts}.md"
+    markdown_path = run_dir / f"{title}_讲义_{ts}.md"
+    compact_markdown_path = run_dir / f"{title}_讲义_紧凑版_{ts}.md"
+    semantic_markdown_path = run_dir / f"{title}_讲义_整理版_{ts}.md"
 
     def _render_original_md():
-        render_original_markdown(slug, sections, markdown_path)
+        render_original_markdown(title, sections, markdown_path)
 
     with ThreadPoolExecutor(max_workers=1) as executor:
         f_orig_md = executor.submit(_render_original_md)
         f_orig_md.result()
 
     def _render_compact_md():
-        render_compact_markdown(slug, sections, compact_markdown_path, mindmap_image_path=None)
+        render_compact_markdown(title, sections, compact_markdown_path, mindmap_image_path=None)
 
     def _render_semantic_md():
-        ensure_semantic_markdown(slug, sections, semantic_markdown_path, mindmap_image_path=None)
+        ensure_semantic_markdown(title, sections, semantic_markdown_path, mindmap_image_path=None)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         f_compact = executor.submit(_render_compact_md)
@@ -329,11 +330,12 @@ def process_video(
     else:
         title = None
 
-    # slug/ts 仍用于后续产物文件名
-    slug = slugify(title or video_path.stem)
+    # 外部 run_dir 复用时，产物文件名和 Markdown 标题使用原始标题；新建 run_dir 时仍用 slug 保证文件系统安全
+    file_title = title if run_dir is not None else slugify(title or video_path.stem)
+    dir_slug = slugify(title or video_path.stem)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if run_dir is None:
-        run_dir = runs_dir / f"{slug}_{ts}"
+        run_dir = runs_dir / f"{dir_slug}_{ts}"
     cache_dir = run_dir / "cache"
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -354,10 +356,10 @@ def process_video(
     slides_path = cache_dir / f"{video_hash}_{slides_slug}.slides.json"
     sections_path = cache_dir / f"{video_hash}_{slides_slug}_{settings.sync_offset_ms or 'auto'}.sections.json"
     # 产物命名：仅 Markdown，思维导图与 Word 在 Agent 整理后生成
-    markdown_path = run_dir / f"{slug}_讲义_{ts}.md"
-    compact_markdown_path = run_dir / f"{slug}_讲义_紧凑版_{ts}.md"
-    semantic_markdown_path = run_dir / f"{slug}_讲义_整理版_{ts}.md"
-    quality_report_path = run_dir / f"{slug}_质量报告_{ts}.md"
+    markdown_path = run_dir / f"{file_title}_讲义_{ts}.md"
+    compact_markdown_path = run_dir / f"{file_title}_讲义_紧凑版_{ts}.md"
+    semantic_markdown_path = run_dir / f"{file_title}_讲义_整理版_{ts}.md"
+    quality_report_path = run_dir / f"{file_title}_质量报告_{ts}.md"
 
     # 步骤 1：提取音频
     audio = extract_audio(video_path, audio_path, settings, force=_stage_forced(force_rebuild, "audio"))
@@ -422,8 +424,8 @@ def process_video(
         )
 
     def _render_original_md_pv():
-        # 统一使用 slug（来自 run_dir 标题），避免 video_path.stem 导致标题变成 "video"
-        render_original_markdown(slug, sections, markdown_path)
+        # 统一使用 file_title（来自 run_dir 标题），避免 video_path.stem 导致标题变成 "video"
+        render_original_markdown(file_title, sections, markdown_path)
 
     def _write_quality_report_pv():
         write_quality_report(quality_report_path, transcript, slides, sections, sync_offset_ms)
@@ -436,7 +438,7 @@ def process_video(
 
     def _render_compact_md_pv():
         render_compact_markdown(
-            slug,
+            file_title,
             sections,
             compact_markdown_path,
             mindmap_image_path=None,
@@ -444,7 +446,7 @@ def process_video(
 
     def _render_semantic_md_pv():
         ensure_semantic_markdown(
-            slug,
+            file_title,
             sections,
             semantic_markdown_path,
             mindmap_image_path=None,
