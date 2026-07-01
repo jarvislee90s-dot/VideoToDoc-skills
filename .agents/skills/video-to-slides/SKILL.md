@@ -21,7 +21,7 @@ description: "在已有视频、音频、字幕的前提下，自动截图去重
 ## 工作流总览（三步中断式）
 
 ```
-capture → review-segments(agent 介入) → finalize
+capture → review-segments(agent 介入) → finalize（仅 Markdown） → render_mindmap（导图 + Word）
 ```
 
 ### capture：时长密度截图 + 分段草案
@@ -83,6 +83,8 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 | `<视频标题>_讲义_<时间戳>.md` | 原始换行版 |
 | `<视频标题>_讲义_紧凑版_<时间戳>.md` | 紧凑段落版 |
 | `<视频标题>_讲义_整理版_<时间戳>.md` | **Agent 工作文件**（含 `<!-- IMAGE:N -->` 占位符） |
+
+> **注意**：此阶段**仅输出 Markdown**，`.docx` 和 `.png` 尚未生成。Agent 完成整理并手写 `mindmap.mmd` 后，需运行 `render_mindmap.py` 生成最终导图与 Word。
 
 ---
 
@@ -174,10 +176,22 @@ python3 scripts/restore_images.py \
 - 如需旧版 Mermaid 圆形散射，可传 `--mermaid` 参数
 - 将 `.mmd` 渲染为 `.png`
 - 当节点过多或单图尺寸过大时，自动按章节拆分为 `mindmap_01.png`、`mindmap_02.png`... 并同步插入 Markdown/Word
+- 同时生成或刷新两份 Word 文档
 
-### ⑩ 生成 Word
+### ⑩ 生成最终导图与 Word
 
-- 重新生成两份 Word 文档
+在 Agent 完成目录插入、语义整理、手写 `mindmap.mmd` 之后，运行：
+
+```bash
+python3 .agents/skills/video-to-slides/scripts/restore_images.py \
+  "runs/<视频标题>_<时间戳>/<视频标题>_讲义_紧凑版_<时间戳>.md" \
+  "runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md"
+
+python3 .agents/skills/video-to-slides/scripts/render_mindmap.py \
+  "runs/<视频标题>_<时间戳>"
+```
+
+`render_mindmap.py` 会一次性渲染思维导图并生成/刷新紧凑版、整理版两份 Word。
 
 ---
 
