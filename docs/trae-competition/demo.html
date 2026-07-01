@@ -26,6 +26,14 @@ body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg
 .btn{display:inline-block;font-size:14px;font-weight:600;padding:10px 22px;border-radius:var(--r-md);transition:background-color 150ms ease;background:var(--pink);color:#fff;border:0;cursor:pointer}
 .btn:hover{background:#e85d85}
 input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
+@media (max-width:640px){
+  .container{padding:var(--s-3)}
+  #config > div[style*="grid"]{grid-template-columns:1fr !important}
+  #flowGrid{grid-template-columns:1fr !important;overflow-x:hidden !important}
+  #flowGrid > div[style*="absolute"]:nth-child(-n+4){display:none !important}
+  #flowGrid > div:nth-child(-n+4){grid-column:1 !important;border-bottom:1px solid #f0f2f7 !important}
+  #outputs div[style*="repeat(4,1fr)"]{grid-template-columns:repeat(2,1fr) !important}
+}
 </style>
 </head>
 <body>
