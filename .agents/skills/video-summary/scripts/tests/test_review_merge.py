@@ -74,6 +74,7 @@ class TestReviewGroups:
         constraints = {"per_group_range": {"min": 1, "max": 8}, "chars_per_group_range": {"min": 30, "max": 120}}
         report = review_groups(segs, groups, constraints)
         assert any(i["type"] == "syntax_break" for i in report["issues"])
+        assert report["pass"] is False
 
     def test_pass_clean(self):
         segs = [{"text": "这是一个短句"}, {"text": "这是另一个短句"}]
