@@ -281,8 +281,9 @@ def finalize_video(
     sections = align_sections(slideset, transcript, sync_offset_ms)
 
     # 生成产物（仅 Markdown，思维导图与 Word 在 Agent 整理后由 render_mindmap.py 生成）
-    # 优先从 run_dir 名推断原始标题，确保复用 video-summary 目录时产物名与 Markdown 标题一致
-    title = _title_from_run_dir(run_dir)
+    # 优先使用 confirmed_segments.json 中的 video_title；若缺失则从 run_dir 名推断，
+    # 确保复用 video-summary 目录时产物名与 Markdown 标题一致
+    title = confirmed.get("video_title") or _title_from_run_dir(run_dir)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     markdown_path = run_dir / f"{title}_讲义_{ts}.md"
     compact_markdown_path = run_dir / f"{title}_讲义_紧凑版_{ts}.md"

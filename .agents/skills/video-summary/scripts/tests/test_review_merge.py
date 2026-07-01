@@ -2,6 +2,8 @@ from pathlib import Path
 import json
 import sys
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_shared"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -108,6 +110,18 @@ class TestParseRange:
 
     def test_default_fallback(self):
         assert _parse_range(None, 1, 999) == {"min": 1, "max": 999}
+
+    def test_single_value_raises(self):
+        with pytest.raises(ValueError, match="range 字符串格式非法"):
+            _parse_range("30", 0, 9999)
+
+    def test_too_many_parts_raises(self):
+        with pytest.raises(ValueError, match="range 字符串格式非法"):
+            _parse_range("30-120-180", 0, 9999)
+
+    def test_non_numeric_raises(self):
+        with pytest.raises(ValueError, match="range 数值解析失败"):
+            _parse_range("abc-def", 0, 9999)
 
 
 class TestMain:

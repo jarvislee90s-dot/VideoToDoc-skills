@@ -43,16 +43,25 @@ def render_mindmap_and_refresh_docs(
     image_paths = [image_path]
 
     refreshed: list[Path] = []
-    for md_file in run_dir.glob("*.md"):
-        if "质量报告" in md_file.name:
-            continue
-        ensure_mindmap_link(md_file, image_paths)
-        docx_file = _docx_path_for_markdown(md_file)
-        generated = markdown_to_docx(md_file, docx_file)
+    md_files = [p for p in run_dir.glob("*.md") if "质量报告" not in p.name]
+
+    # 按目标 docx 分组；原始版与紧凑版会映射到同一 docx，优先采用紧凑版
+    grouped: dict[Path, list[Path]] = {}
+    for md_file in md_files:
+        grouped.setdefault(_docx_path_for_markdown(md_file), []).append(md_file)
+
+    for docx_file, sources in grouped.items():
+        # 若同时存在紧凑版和其他版本，优先用紧凑版生成 docx
+        preferred = next(
+            (p for p in sources if "_讲义_紧凑版_" in p.stem),
+            sources[0],
+        )
+        for md_file in sources:
+            ensure_mindmap_link(md_file, image_paths)
+        generated = markdown_to_docx(preferred, docx_file)
         if generated:
             refreshed.append(generated)
-    # 当紧凑版与原始 Markdown 映射到同一个 docx 时，避免重复报告
-    refreshed = list(dict.fromkeys(refreshed))
+
     return image_paths, refreshed
 
 

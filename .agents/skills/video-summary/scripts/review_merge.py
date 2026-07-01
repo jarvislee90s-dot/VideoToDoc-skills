@@ -10,12 +10,15 @@
 """
 from __future__ import annotations
 import json
+import logging
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
 from transcript_merge import normalize_raw  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 # 前段结尾出现这些强依存动词，且下一段开头是数字/百分比/倍数时，疑似补语被拆断
@@ -65,7 +68,18 @@ def _parse_range(value: str | dict, default_min: int, default_max: int) -> dict:
         }
     if isinstance(value, str):
         parts = value.split("-")
-        return {"min": int(parts[0]), "max": int(parts[1])}
+        if len(parts) != 2:
+            raise ValueError(f"range 字符串格式非法，应为 'min-max'：{value!r}")
+        try:
+            return {"min": int(parts[0]), "max": int(parts[1])}
+        except ValueError as exc:
+            raise ValueError(f"range 数值解析失败：{value!r}") from exc
+    logger.warning(
+        "无法识别的 range 类型 %r，回退到默认值 %d-%d",
+        value,
+        default_min,
+        default_max,
+    )
     return {"min": default_min, "max": default_max}
 
 

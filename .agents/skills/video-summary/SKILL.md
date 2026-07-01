@@ -160,7 +160,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 - `group_size_exceeded` / `chars_above_max` / `chars_below_min` 优先通过“在同话题内部切分/合并”解决，不要跨话题拆断；
 - 若某段因同话题完整而必须超出区间，保留并说明理由。
 
-8. **Agent 摘要**：
+7. **Agent 摘要**：
    - Agent 读取 `transcript.txt`（合并后的 `transcript_merged.json` 优先）
    - 生成 `<视频标题>_总结_<时间戳>.md`：
      - 提取核心观点和关键信息
