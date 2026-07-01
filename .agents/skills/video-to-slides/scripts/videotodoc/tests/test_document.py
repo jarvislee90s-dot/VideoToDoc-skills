@@ -71,3 +71,16 @@ def test_generate_mindmap_keeps_root_syntax_valid(tmp_path: Path):
     text = out.read_text(encoding="utf-8")
     assert "root((" in text
     assert "root（（" not in text
+
+
+def test_process_result_mindmap_path_optional(tmp_path: Path):
+    from videotodoc.models import ProcessResult
+    result = ProcessResult(
+        run_dir=tmp_path,
+        transcript_path=tmp_path / "t.json",
+        slides_path=tmp_path / "s.json",
+        sections_path=tmp_path / "a.json",
+        markdown_path=tmp_path / "m.md",
+        mindmap_path=None,
+    )
+    assert result.mindmap_path is None

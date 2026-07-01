@@ -317,10 +317,11 @@ def finalize_video(
         f_orig_md.result()
 
     def _render_compact_md():
-        render_compact_markdown(slug, sections, compact_markdown_path, mm_images)
+        # 中间 Markdown 不直接嵌入思维导图，由后续 post-Agent 步骤统一处理
+        render_compact_markdown(slug, sections, compact_markdown_path, None)
 
     def _render_semantic_md():
-        ensure_semantic_markdown(slug, sections, semantic_markdown_path, mm_images)
+        ensure_semantic_markdown(slug, sections, semantic_markdown_path, None)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         f_compact = executor.submit(_render_compact_md)
@@ -487,11 +488,12 @@ def process_video(
         f_quality_pv.result()
 
     def _render_compact_md_pv():
+        # 中间 Markdown 不直接嵌入思维导图，由后续 post-Agent 步骤统一处理
         render_compact_markdown(
             video_path.stem,
             sections,
             compact_markdown_path,
-            mm_images,
+            None,
         )
 
     def _render_semantic_md_pv():
@@ -499,7 +501,7 @@ def process_video(
             video_path.stem,
             sections,
             semantic_markdown_path,
-            mm_images,
+            None,
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:

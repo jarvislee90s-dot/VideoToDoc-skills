@@ -77,7 +77,7 @@ class ProcessResult:
     slides_path: Path
     sections_path: Path
     markdown_path: Path
-    mindmap_path: Path
+    mindmap_path: Path | None = None
     compact_markdown_path: Path | None = None
     semantic_markdown_path: Path | None = None
     mindmap_image_path: Path | None = None
