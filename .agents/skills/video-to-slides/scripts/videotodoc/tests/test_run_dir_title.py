@@ -32,20 +32,14 @@ def test_process_video_uses_run_dir_name_for_slug(tmp_path):
         from videotodoc.models import SlideSet
         return SlideSet(slides=[], metadata={})
 
-    def fake_render_mindmap(*args, **kwargs):
-        return [], []
-
     with patch("videotodoc.pipeline.extract_audio", side_effect=fake_extract), \
          patch("videotodoc.pipeline.transcribe_audio", side_effect=fake_transcribe), \
          patch("videotodoc.pipeline.detect_slides", side_effect=fake_detect), \
          patch("videotodoc.pipeline.estimate_sync_offset_ms", return_value=0), \
          patch("videotodoc.pipeline.align_sections", return_value=[]), \
-         patch("videotodoc.pipeline.generate_mindmap", side_effect=noop), \
-         patch("videotodoc.pipeline.render_mindmap_and_refresh_docs", side_effect=fake_render_mindmap), \
          patch("videotodoc.pipeline.render_original_markdown", side_effect=noop), \
          patch("videotodoc.pipeline.render_compact_markdown", side_effect=noop), \
          patch("videotodoc.pipeline.ensure_semantic_markdown", side_effect=noop), \
-         patch("videotodoc.pipeline.markdown_to_docx", return_value=None), \
          patch("videotodoc.pipeline.write_quality_report", side_effect=noop), \
          patch("videotodoc.pipeline.trim_candidates_by_transcript", return_value=[]), \
          patch("videotodoc.pipeline.deduplicate_slides", side_effect=fake_slideset), \
@@ -60,4 +54,7 @@ def test_process_video_uses_run_dir_name_for_slug(tmp_path):
     assert "我的测试视频" in result.markdown_path.name
     assert "video_讲义" not in result.markdown_path.name
     assert "我的测试视频" in result.semantic_markdown_path.name
-    assert "我的测试视频" in result.mindmap_path.name
+    assert "我的测试视频" in result.compact_markdown_path.name
+    assert result.mindmap_path is None
+    assert result.docx_path is None
+    assert result.semantic_docx_path is None
