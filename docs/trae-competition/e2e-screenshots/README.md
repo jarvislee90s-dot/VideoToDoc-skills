@@ -15,9 +15,9 @@
 | 01-initial.png | 通过 | Hero、配置面板、三个 Skill 折叠面板均正确渲染，无错位；chat/nodeFlow/outputs 初始隐藏。 |
 | 02-chat-started.png | 通过 | 聊天区域已出现，用户消息与 Agent 消息气泡样式、对齐方式符合设计。 |
 | 03-nodeflow-running.png | 通过 | 三列节点流正确渲染，当前激活节点有高亮边框与呼吸动画，未激活节点透明度降低。 |
-| 04-connection-lines.png | 通过 | 从产出文件到下一个 Agent 的虚线动画连线已绘制，标签文字清晰可读。 |
+| 04-connection-lines.png | 通过 | 从产出文件到下一个 Agent 的虚线连线已绘制，标签文字清晰可读。 |
 | 05-outputs.png | 待修复 | 产物面板布局正确（摘要、思维导图、截图画廊、飞书链接），但图片与 Markdown 资源返回 404，出现 broken-image 占位。此为预期现象，因为 SpaceX 样本产物尚未推送到 GitHub main 分支。 |
-| 06-mobile.png | 通过 | 视口 393 × 852，单列布局无严重重叠；配置网格垂直堆叠；节点流三列表头在移动端隐藏，仅保留「Agent 执行流」单一标题；产物截图网格改为 2 列；图片自适应宽度。 |
+| 06-mobile.png | 通过 | 已修复 CSS 特异性问题并重截。视口 393 × 852，配置网格与节点流均为单列（`grid-template-columns: 1fr`），`body.scrollWidth` 378px 无水平溢出；节点流三列表头在移动端隐藏，仅保留「Agent 执行流」单一标题；产物截图网格改为 2 列；图片自适应宽度。 |
 
 ## 总体评价
 
@@ -32,4 +32,4 @@ cd docs/trae-competition
 python3 -m http.server 8765 &
 ```
 
-使用 Playwright MCP 完成导航、点击、等待、截图、视口调整。
+使用 Playwright MCP 工具完成导航、点击、等待、截图、视口调整。

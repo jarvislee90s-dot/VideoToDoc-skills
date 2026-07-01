@@ -26,6 +26,9 @@ body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg
 .btn{display:inline-block;font-size:14px;font-weight:600;padding:10px 22px;border-radius:var(--r-md);transition:background-color 150ms ease;background:var(--pink);color:#fff;border:0;cursor:pointer}
 .btn:hover{background:#e85d85}
 input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
+.config-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)}
+.flow-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden}
+.slide-gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 @media (max-width:640px){
   .container{padding:var(--s-3)}
   .config-grid{grid-template-columns:1fr}
@@ -47,7 +50,7 @@ input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);bor
 
   <section id="config" class="card" style="margin-bottom:var(--s-4)">
     <div class="lab">Agent 配置</div>
-    <div class="config-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)">
+    <div class="config-grid">
       <div><label style="font-size:12px;color:var(--hint)">API Key</label><input type="text" value="sk-••••••••••••••••••••" readonly></div>
       <div><label style="font-size:12px;color:var(--hint)">Base URL</label><input type="text" value="https://api.openai.com/v1" readonly></div>
       <div><label style="font-size:12px;color:var(--hint)">模型</label><input type="text" value="gpt-4o" readonly></div>
@@ -204,7 +207,7 @@ const NodeFlow = {
     el.style.display = "block";
     el.innerHTML = `
       <div class="lab">Agent 执行流</div>
-      <div id="flowGrid" class="flow-grid" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden">
+      <div id="flowGrid" class="flow-grid">
         <div class="flow-line" style="position:absolute;left:33.33%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
         <div class="flow-line" style="position:absolute;left:66.66%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
         <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">🤖 AGENT 操作</div>
@@ -326,7 +329,7 @@ const OutputPanel = {
       </div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">3. 关键截图</h3>
-        <div class="slide-gallery-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px">
+        <div class="slide-gallery-grid">
           ${DEMO_DATA.outputs.slides.map(url => `<img src="${url}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide">`).join("")}
         </div>
       </div>
