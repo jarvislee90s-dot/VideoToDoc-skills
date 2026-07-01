@@ -87,8 +87,8 @@ def review_groups(
                 "description": f"第{gi}段共{char_count}字，超出建议上限{chars_range['max']}字。",
                 "suggested_fix": f"整理 agent 可按话题切分该段，使每段尽量落在{chars_range['min']}-{chars_range['max']}字之间。",
             })
-        elif char_count < chars_range["min"] and len(idx) == 1:
-            # 单短句且低于字数下限时提示，便于 review agent 判断是否需与相邻段合并
+        elif char_count < chars_range["min"] and len(idx) > 1:
+            # 多短句合并后仍低于字数下限才提示；单短句本身可能就很短，属于正常
             issues.append({
                 "group_index": gi,
                 "type": "chars_below_min",

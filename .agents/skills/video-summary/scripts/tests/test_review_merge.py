@@ -25,8 +25,8 @@ class TestReviewGroups:
         assert any(i["type"] == "chars_above_max" for i in report["issues"])
 
     def test_chars_below_min(self):
-        segs = [{"text": "短"}]
-        groups = [{"indices": [0], "text": "短"}]
+        segs = [{"text": "短"}, {"text": "句"}]
+        groups = [{"indices": [0, 1], "text": "短句"}]
         constraints = {"per_group_range": {"min": 1, "max": 5}, "chars_per_group_range": {"min": 30, "max": 120}}
         report = review_groups(segs, groups, constraints)
         assert any(i["type"] == "chars_below_min" for i in report["issues"])
@@ -46,8 +46,8 @@ class TestReviewGroups:
         assert any(i["type"] == "syntax_break" for i in report["issues"])
 
     def test_pass_clean(self):
-        segs = [{"text": "短句一"}, {"text": "短句二"}]
-        groups = [{"indices": [0, 1], "text": "短句一，短句二"}]
+        segs = [{"text": "这是一个短句"}, {"text": "这是另一个短句"}]
+        groups = [{"indices": [0, 1], "text": "这是一个短句，这是另一个短句"}]
         constraints = {"per_group_range": {"min": 1, "max": 8}, "chars_per_group_range": {"min": 10, "max": 120}}
         report = review_groups(segs, groups, constraints)
         assert report["pass"] is True
