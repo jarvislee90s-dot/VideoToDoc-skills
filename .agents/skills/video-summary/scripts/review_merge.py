@@ -44,11 +44,14 @@ def _looks_like_complement(text: str) -> bool:
 
 
 def _has_syntax_break(prev_group_text: str, next_group_first_text: str) -> bool:
-    """简单启发式：前段以依存词结尾，下段开头是数量/程度补语。"""
+    """简单启发式：前段以依存词结尾，下段开头是数量/程度补语。
+
+    依存词后允许带口语中常见的"了"，如"暴涨了"后接"300%"仍视为断裂。
+    """
     if not prev_group_text or not next_group_first_text:
         return False
     end = prev_group_text.rstrip("，。；：！？")
-    if not any(end.endswith(h) for h in _SYNTAX_HINT_ENDINGS):
+    if not any(end.endswith(h) or end.endswith(h + "了") for h in _SYNTAX_HINT_ENDINGS):
         return False
     return _looks_like_complement(next_group_first_text)
 

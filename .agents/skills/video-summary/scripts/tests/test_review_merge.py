@@ -61,6 +61,20 @@ class TestReviewGroups:
         report = review_groups(segs, groups, constraints)
         assert any(i["type"] == "syntax_break" for i in report["issues"])
 
+    def test_syntax_break_number_with_le(self):
+        # 口语转录中依存动词常带"了"，如"暴涨了"后接补语仍应被识别
+        segs = [
+            {"text": "价格基本都暴涨了"},
+            {"text": "300%到500%"},
+        ]
+        groups = [
+            {"indices": [0], "text": "价格基本都暴涨了"},
+            {"indices": [1], "text": "300%到500%"},
+        ]
+        constraints = {"per_group_range": {"min": 1, "max": 8}, "chars_per_group_range": {"min": 30, "max": 120}}
+        report = review_groups(segs, groups, constraints)
+        assert any(i["type"] == "syntax_break" for i in report["issues"])
+
     def test_pass_clean(self):
         segs = [{"text": "这是一个短句"}, {"text": "这是另一个短句"}]
         groups = [{"indices": [0, 1], "text": "这是一个短句，这是另一个短句"}]
