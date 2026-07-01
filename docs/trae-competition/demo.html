@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VideoToDoc Demo · 视频一键变图文讲义</title>
+<style>
+:root{
+  --pink:#FB7299;--blue:#00AEEC;--green:#00B894;
+  --bg:#F8F9FC;--surface:#FFFFFF;--code-bg:#F4F5F7;
+  --text:#18191C;--muted:#61666D;--hint:#9499A0;
+  --border:#E3E5E7;--border-strong:#DEE0E3;
+  --r-sm:4px;--r-md:6px;--r-lg:8px;--r-xl:12px;
+  --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:32px;
+  --font:"-apple-system","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",Menlo,monospace;
+  --maxw:1100px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg,#F8F9FC 0%,#fff 30%,#fff 70%,#F8F9FC 100%);line-height:1.6;-webkit-font-smoothing:antialiased}
+.container{max-width:var(--maxw);margin:0 auto;padding:var(--s-5)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s-4);box-shadow:0 2px 8px rgba(0,0,0,0.02)}
+.lab{font-size:11px;color:var(--hint);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:var(--s-3);display:flex;align-items:center;gap:var(--s-2)}
+.lab::before{content:"";width:3px;height:14px;background:var(--pink);display:inline-block}
+.btn{display:inline-block;font-size:14px;font-weight:600;padding:10px 22px;border-radius:var(--r-md);transition:background-color 150ms ease;background:var(--pink);color:#fff;border:0;cursor:pointer}
+.btn:hover{background:#e85d85}
+input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
+</style>
+</head>
+<body>
+<div class="container">
+  <section id="hero" class="card" style="margin-bottom:var(--s-4)">
+    <h1 style="font-size:32px;font-weight:800;margin-bottom:var(--s-2)">VideoToDoc Agent Demo</h1>
+    <p style="color:var(--muted);margin-bottom:var(--s-3)">把一个视频链接交给 Agent，自动完成摘要、讲义、飞书发布。</p>
+    <input type="text" id="videoUrl" value="https://www.youtube.com/watch?v=SpaceX..." readonly>
+    <button class="btn" id="startBtn" style="margin-top:var(--s-3)">开始自动运行</button>
+  </section>
+
+  <section id="config" class="card" style="margin-bottom:var(--s-4)">
+    <div class="lab">Agent 配置</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)">
+      <div><label style="font-size:12px;color:var(--hint)">API Key</label><input type="text" value="sk-••••••••••••••••••••" readonly></div>
+      <div><label style="font-size:12px;color:var(--hint)">Base URL</label><input type="text" value="https://api.openai.com/v1" readonly></div>
+      <div><label style="font-size:12px;color:var(--hint)">模型</label><input type="text" value="gpt-4o" readonly></div>
+    </div>
+  </section>
+
+  <section id="skills" class="card" style="margin-bottom:var(--s-4)">
+    <div class="lab">三个 Skill</div>
+    <details><summary><b>video-summary</b> — 视频转录与摘要</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">输入视频链接或本地路径，自动获取字幕或 ASR 转录，生成文字摘要。</p></details>
+    <details style="margin-top:var(--s-2)"><summary><b>video-to-slides</b> — 截图与图文讲义</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">自动截图去重、图文对齐、语义整理，输出 Markdown/Word 与思维导图。</p></details>
+    <details style="margin-top:var(--s-2)"><summary><b>feishu-markdown-publish</b> — 飞书云文档发布</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">将整理好的 Markdown 讲义发布到飞书云文档。</p></details>
+  </section>
+
+  <section id="chat" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+  <section id="nodeFlow" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+  <section id="outputs" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+
+  <footer style="text-align:center;color:var(--hint);font-size:12px">
+    <p><a href="https://github.com/jarvislee90s-dot/VideoToDoc-skills" target="_blank">GitHub</a> · <a href="https://forum.trae.cn/t/topic/30174" target="_blank">报名帖</a></p>
+  </footer>
+</div>
+</body>
+</html>
