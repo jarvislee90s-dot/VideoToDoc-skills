@@ -5,6 +5,10 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 2026-07-01
+
+- 新增 TRAE 初赛 Demo HTML，支持 Agent 对话回放、三列节点执行流可视化、真实 SpaceX 产物展示
+
 ## [0.3.0] - 2026-06-30
 
 ### Changed

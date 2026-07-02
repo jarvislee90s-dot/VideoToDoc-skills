@@ -30,6 +30,12 @@ python3 .agents/skills/feishu-markdown-publish/scripts/publish.py 讲义.md
 
 ---
 
+## 初赛 Demo
+
+在线体验 Demo（单文件 HTML）：[docs/trae-competition/demo.html](docs/trae-competition/demo.html)
+
+下载 ZIP 上传版本：[docs/trae-competition/demo.zip](docs/trae-competition/demo.zip)
+
 ## 目录结构
 
 ```text
