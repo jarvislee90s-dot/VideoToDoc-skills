@@ -41,12 +41,15 @@ python3 .agents/skills/feishu-markdown-publish/scripts/publish.py 讲义.md
 ```text
 .agents/skills/
 ├── _shared/
-│   └── project.py          # 项目目录定位工具
+│   ├── project.py            # 项目目录定位工具
+│   └── transcript_merge/     # 转录合并共享库（strategies.py 分段策略 + 合并/校验）
 ├── video-summary/
 │   ├── SKILL.md            # Skill 定义
 │   ├── README.md           # 使用说明
+│   ├── signal_stats.py     # 结构形态信号统计（非决策提示）
 │   └── scripts/
-│       └── process.py      # 视频下载 + ASR + 摘要
+│       ├── process.py      # 视频下载 + ASR + 摘要
+│       └── prepare_merge.py # 合并输入清单 + 原型分段策略（--archetype）
 ├── video-to-slides/
 │   ├── SKILL.md
 │   ├── README.md
@@ -66,6 +69,25 @@ python3 .agents/skills/feishu-markdown-publish/scripts/publish.py 讲义.md
     └── scripts/
         └── publish_markdown.py  # 飞书文档发布
 ```
+
+## 结构形态分段策略（2026-07-02）
+
+video-summary 的转录合并步骤现支持按视频结构形态选择不同分段策略。4 个原型按"段落边界触发器"区分：
+
+| 原型 | 适用 | 切分倾向 |
+|---|---|---|
+| `topic_preserve` | 资讯/故事/访谈 | 线性切，宁少切勿多（粗） |
+| `enumeration_unit` | 教程/操作/盘点 | 一个枚举单元一段（细） |
+| `visual_event` | PPT/动画讲解 | 翻页点硬边界优先（需 `slides.json`） |
+| `rescan_grid` | 多产品对比测评 | 全文扫建网格再分（重组） |
+
+```bash
+# 指定原型（L1 先验，agent 可 L3 全文覆盖）；缺省 auto 回退时长档
+python3 .agents/skills/video-summary/scripts/prepare_merge.py \
+  runs/<run_dir>/transcript.json --archetype topic_preserve
+```
+
+类型判定归 agent，脚本不决策（`signal_stats` 仅给计数提示）。详见 [SKILL.md](.agents/skills/video-summary/SKILL.md)「结构形态原型判定」与 [设计文档](docs/superpowers/specs/2026-07-02-video-type-segmentation-strategy-design.md)。
 
 ## 安装依赖
 

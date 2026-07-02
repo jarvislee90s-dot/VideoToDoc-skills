@@ -43,6 +43,81 @@ capture → review-segments(agent 介入) → finalize（仅 Markdown） → ren
 
 ---
 
+## 完整工作流图示
+
+### 前置 Skill：video-summary 工作流
+
+```mermaid
+flowchart TB
+    subgraph vs_input ["输入处理"]
+        A[URL / 本地视频] --> B{是否有字幕？<br/>仅 URL}
+        B -- 有 --> C[yt-dlp 下载字幕]
+        B -- 无 / 本地 --> D[下载视频 / 提取音频]
+        D --> E[ffmpeg 提取 audio.wav]
+        E --> F[mlx-whisper ASR]
+        C --> G[transcript.json]
+        F --> G
+    end
+
+    G --> H[prepare_merge.py]
+    subgraph vs_merge ["语义合并 & Review 闭环"]
+        H --> I[merge_input.json<br/>含 suggestion 约束]
+        I --> J[整理 Agent<br/>语义合并]
+        J --> K[merged_groups.json]
+        K --> L[apply_merge.py<br/>校验 index]
+        L -- 校验失败 --> J
+        L -- 通过 --> M[transcript_merged.json]
+        K --> N[review_merge.py<br/>客观检查]
+        N --> O[merge_review_report.json<br/>初版]
+        O --> P[Review Agent<br/>独立上下文语义复核]
+        P --> Q[merge_review_report.json<br/>增强版]
+        Q --> J
+        J -. 按报告局部修正 .-> K
+    end
+
+    M --> R[整理/摘要 Agent]
+    subgraph vs_output ["产物输出"]
+        R --> S[<视频标题>_总结_<时间戳>.md]
+        M --> T[transcript.txt<br/>合并后文本]
+    end
+```
+
+### 本 Skill：video-to-slides 工作流
+
+```mermaid
+flowchart TB
+    subgraph input ["输入检查"]
+        A[视频 + transcript.json/<br/>transcript_merged.json] --> B{文件是否存在？}
+        B -- 否 --> C[提示先运行 video-summary]
+        B -- 是 --> D[process.py]
+    end
+
+    subgraph p1 ["阶段 1：脚本自动执行"]
+        D --> E[前置合并<br/>优先 transcript_merged.json]
+        E --> F[截图 + 三段式去重]
+        F --> G[pending_segments.json]
+        G --> H[Review Agent<br/>审查 keep/merge/split]
+        H --> I[confirmed_segments.json]
+        I --> J[图文对齐]
+        J --> K[生成 Markdown<br/>原始/紧凑/整理版]
+    end
+
+    subgraph p2 ["阶段 2：Agent 执行"]
+        K --> L[整理 Agent<br/>生成全文目录]
+        L --> M[整理 Agent<br/>语义整理文字]
+        M --> N[整理 Agent<br/>手写 mindmap.mmd]
+    end
+
+    subgraph p3 ["阶段 3：脚本自动收尾"]
+        N --> O[restore_images.py<br/>恢复图片 + 同步目录]
+        O --> P[render_mindmap.py<br/>渲染导图 + Word]
+        P --> Q[<视频标题>_讲义_整理版.docx]
+        P --> R[<视频标题>_思维导图.png]
+    end
+```
+
+---
+
 ## 阶段 1：脚本自动执行
 
 > **Agent 注意**：以下步骤由脚本自动完成，你不需要干预。

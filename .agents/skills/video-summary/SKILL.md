@@ -57,10 +57,38 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 **背景**：ASR 按语音停顿把句子切得太碎（平均 1-2 秒一句、半句话一段），
 直接用于图文对齐会导致每页只有半句话。**必须**先合并再用于后续步骤。
 
+**结构形态原型判定（prepare_merge 前必做）**：
+
+合并前先判定视频的结构形态原型，再套对应分段策略。**类型判定归 agent，脚本不决策**
+（`signal_stats` 只给计数提示）。4 个原型按"段落边界触发器"区分，两两策略不同：
+
+| 原型 | 边界触发器 | 典型视频 | 策略要点 |
+|---|---|---|---|
+| `topic_preserve` | 话题/事件/时间转折 | 资讯、故事、访谈 | 线性切，宁少切勿多（粗） |
+| `enumeration_unit` | 显式枚举标记（步骤词/序数词） | 教程、操作、盘点 | 一个枚举单元一段（细） |
+| `visual_event` | 外部视觉事件（PPT 翻页/场景切换） | PPT 讲解、动画 | 硬边界优先，区间内再按语义子话题细分；**需视觉信号** |
+| `rescan_grid` | 不能线性切、多对象多维度 | 多产品测评、对比 | 先扫全文建 item×维度 网格再分（重组） |
+
+**三层证据（权威性递增，后者覆盖前者）**：
+- **L1 用户先验**：用户声明类型 → `prepare_merge --archetype <原型>`（加权先验，agent 可 L3 覆盖）。
+- **L2 标题+摘要**：纯规则预启视觉信号（标题/摘要含"PPT/课件/幻灯片"则预启翻页检测，非 LLM）；并作为 L3 上下文。
+- **L3 全文权威**：agent 读全文判定原型。若与 L1 不同，**必须重跑** `prepare_merge --archetype <L3 原型>` 刷新 ranges——否则 review 阶段用旧区间误报。
+- **L1/L3 冲突报告**：L3 高置信覆盖 L1（用户说的不一定对）；L3 与 L1 不同时，agent **向用户报告分歧**并说明按 L3 处理的理由，再按 L3 重跑。L3 低置信/模糊时，L1 用户先验作为裁定者打破平局。
+- 用户确信、要跳过 L3 时：`--force-archetype <原型>`（绝对覆盖，跳过 L3）。
+- 未给 `--archetype` 时脚本走 `auto`（回退时长档）并打印 `signal_stats` 计数提示，供 agent 做 L3 判定参考（计数非决策）。
+
+**原型③（visual_event）视觉信号**：
+- 翻页边界**复用** video-to-slides 的 `slides.json`：`prepare_merge --visual-signals <slides.json>`，或与 transcript 同 run_dir 时自动探测。
+- 有 `slide_boundaries_ms` → 优先在翻页点断段，区间内再按语义子话题细分。
+- 缺视觉信号 → 降级 `warnings=["visual_missing"]`，**不崩**；agent 改按 ①+②（话题/枚举）兜底分段。
+
+**区域级混合**：一个视频可能跨原型（如前半教程②、后半测评④）。按区域套对应原型分段，不必全局统一。
+
 **步骤**：
-1. 运行 prepare_merge 生成合并输入清单（含目标段数建议）：
+1. 运行 prepare_merge 生成合并输入清单（含目标段数建议 + 原型策略）：
    python3 .agents/skills/video-summary/scripts/prepare_merge.py \
-     runs/<run_dir>/transcript.json
+     runs/<run_dir>/transcript.json \
+     --archetype <topic_preserve|enumeration_unit|visual_event|rescan_grid>   # 可选，L1 先验；缺省 auto 回退时长档
 2. 读取 runs/<run_dir>/merge_input.json（含 total_segments、suggestion、segments 清单）
 3. 把相邻短句按语义合并为段落，写 runs/<run_dir>/merged_groups.json：
    [{"indices": [0,1,2,3,4,5,6,7,8], "text": "合并后的一段话"}, ...]
@@ -160,7 +188,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 - `group_size_exceeded` / `chars_above_max` / `chars_below_min` 优先通过“在同话题内部切分/合并”解决，不要跨话题拆断；
 - 若某段因同话题完整而必须超出区间，保留并说明理由。
 
-7. **Agent 摘要**：
+8. **Agent 摘要**：
    - Agent 读取 `transcript.txt`（合并后的 `transcript_merged.json` 优先）
    - 生成 `<视频标题>_总结_<时间戳>.md`：
      - 提取核心观点和关键信息

@@ -1,0 +1,1 @@
+../../docs/superpowers/specs/2026-07-02-video-type-segmentation-strategy-design.md

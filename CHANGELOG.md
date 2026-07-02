@@ -5,6 +5,23 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 2026-07-02
+
+### Added
+
+- **video-summary 转录合并支持结构形态原型分段策略**：4 个原型（`topic_preserve` 话题保完整 / `enumeration_unit` 枚举按单元 / `visual_event` 视觉事件 / `rescan_grid` 全文重组）注册在可扩展的 `STRATEGY_REGISTRY`，`suggest_segments(duration_ms, archetype, visual_signals)` 按原型套不同柔性区间；旧单参签名逐字节等价（向后兼容，非协商回归门）
+- `signal_stats.py`：纯统计提示（各原型锚点词命中计数），**不决策**——类型判定归 agent（三层证据：L1 用户先验 / L2 标题摘要 / L3 全文权威）
+- `prepare_merge.py` 新增 `--archetype` / `--force-archetype` / `--visual-signals` / `--tid`；原型③翻页边界复用 video-to-slides 的 `slides.json`（同 run_dir 自动探测），缺信号降级 `visual_missing` warning 不崩
+- video-to-slides `SKILL.md` 增加完整工作流图示（mermaid 流程图，含前置 video-summary 与后续发布闭环）
+- 补充 6-7 月设计文档（`docs/superpowers/specs|plans`，含本期分段策略设计）与 spec-kit 脚手架（`specs/001-.../`、`.specify/memory/constitution.md` 项目宪法）
+- 初赛 Demo 资产更新（`docs/trae-competition/` 内嵌数据、截图、预览页）
+
+### Changed
+
+- video-summary `SKILL.md` 合并步骤前增加"原型判定"（4 原则 + 三层证据 + ③翻页/降级 + 区域级混合 + `--force-archetype` 逃生舱 + L1/L3 冲突报告）
+- 更新 README 目录结构与特性说明
+- 测试增至 59 例（新增 strategies / signal_stats / prepare_merge + Constitution III 字节等价回归门 + review_merge 原型区间）
+
 ## 2026-07-01
 
 - 新增 TRAE 初赛 Demo HTML，支持 Agent 对话回放、三列节点执行流可视化、真实 SpaceX 产物展示

@@ -30,7 +30,7 @@
 - OutputPanel 中所有产物均有可点击链接。
 - 移动端 393 × 852 无水平溢出。
 
-验证过程中修复了一处遗漏：原 `demo.html` 完成节点流后未调用 `OutputPanel.show()`，导致产物面板始终隐藏。已将 `run` 函数改为 `async`，并在所有节点完成后 `await OutputPanel.show()`。
+本次验证额外修复了 AgentChat 消息显示问题：原 `setTimeout` 链在大量网络请求并发时可能中断，导致后续 Agent 消息无法弹出。已将消息队列消费改为 `setInterval` 轮询，确保 8 条对话按 `afterNode` 时序完整显示。
 
 ## 已知问题
 

@@ -101,6 +101,34 @@ class TestReviewGroups:
         assert not any(i["type"] == "syntax_break" for i in report["issues"])
 
 
+class TestArchetypeSpecificRanges:
+    """AC#9：review_merge 对 archetype 专属区间（如 rescan_grid 的 60-220）仍正确报告。"""
+
+    def test_rescan_grid_chars_above_max(self):
+        # rescan_grid chars_per_group_range="60-220"；一段 > 220 字 → chars_above_max
+        segs = [{"text": "这是一段用于横评的较长文本。" * 20}]  # ~280 字 > 220
+        groups = [{"indices": [0], "text": segs[0]["text"]}]
+        constraints = {
+            "per_group_range": {"min": 5, "max": 12},          # rescan_grid
+            "chars_per_group_range": {"min": 60, "max": 220},   # rescan_grid
+        }
+        report = review_groups(segs, groups, constraints)
+        assert report["pass"] is True  # warning 不致 fail
+        assert any(i["type"] == "chars_above_max" for i in report["issues"])
+
+    def test_rescan_grid_chars_below_min(self):
+        # rescan_grid 区间下限 60；一段 5 字 < 60 → chars_below_min
+        segs = [{"text": "短"}, {"text": "句"}]
+        groups = [{"indices": [0, 1], "text": "短句"}]
+        constraints = {
+            "per_group_range": {"min": 5, "max": 12},
+            "chars_per_group_range": {"min": 60, "max": 220},
+        }
+        report = review_groups(segs, groups, constraints)
+        assert report["pass"] is True
+        assert any(i["type"] == "chars_below_min" for i in report["issues"])
+
+
 class TestParseRange:
     def test_string_range(self):
         assert _parse_range("30-120", 0, 9999) == {"min": 30, "max": 120}

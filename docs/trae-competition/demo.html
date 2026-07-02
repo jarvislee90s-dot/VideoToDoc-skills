@@ -14,11 +14,11 @@
   --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:32px;
   --font:"-apple-system","PingFang SC","Microsoft YaHei",sans-serif;
   --mono:"SF Mono",Menlo,monospace;
-  --maxw:1100px;
+  --maxw:1200px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html{scroll-behavior:smooth}
-body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg,#F8F9FC 0%,#fff 30%,#fff 70%,#F8F9FC 100%);line-height:1.6;-webkit-font-smoothing:antialiased}
+body{font-family:var(--font);color:var(--text);background:var(--bg);line-height:1.6;-webkit-font-smoothing:antialiased}
 .container{max-width:var(--maxw);margin:0 auto;padding:var(--s-5)}
 .card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s-4);box-shadow:0 2px 8px rgba(0,0,0,0.02)}
 .lab{font-size:11px;color:var(--hint);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:var(--s-3);display:flex;align-items:center;gap:var(--s-2)}
@@ -27,25 +27,111 @@ body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg
 .btn:hover{background:#e85d85}
 input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
 .config-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)}
-.flow-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden}
+
+/* Skills */
+.skill-link{font-size:12px;color:var(--blue);text-decoration:none;margin-left:6px}
+.skill-link:hover{text-decoration:underline}
+.skill-item{border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:#fff}
+.skill-summary{list-style:none;display:flex;align-items:center;gap:var(--s-2);padding:10px 12px;cursor:pointer;background:#fafbfc;border-bottom:1px solid transparent;transition:background 150ms ease}
+.skill-summary:hover{background:#f0f2f5}
+.skill-item[open] .skill-summary{border-bottom-color:var(--border)}
+.skill-summary::-webkit-details-marker{display:none}
+.skill-name{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text)}
+.skill-desc{font-size:13px;color:var(--muted);flex:1}
+.skill-chevron{width:22px;height:22px;border-radius:4px;background:#f0f2f5;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);transition:all 150ms ease}
+.skill-summary:hover .skill-chevron{background:#e3e5e7}
+.skill-item[open] .skill-chevron{transform:rotate(180deg);background:var(--pink);color:#fff;border-color:var(--pink)}
+.skill-body{padding:10px 12px;background:#fff}
+
+/* Main split layout */
+.demo-stage{display:grid;grid-template-columns:1fr 1fr;gap:var(--s-4);margin-top:var(--s-4);align-items:stretch}
+
+/* Codex-style chat window */
+.chat-window{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);overflow:visible;box-shadow:0 4px 20px rgba(0,0,0,0.04);display:flex;flex-direction:column;min-height:480px;height:auto;scrollbar-width:none}
+.chat-window::-webkit-scrollbar{display:none}
+.chat-titlebar{height:40px;background:#f4f5f7;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.chat-dot{width:10px;height:10px;border-radius:50%}
+.chat-dot.r{background:#ff5f57}.chat-dot.y{background:#febc2e}.chat-dot.g{background:#28c840}
+.chat-title{flex:1;font-size:12px;color:var(--muted);text-align:center;font-weight:600}
+.chat-body{flex:1;padding:var(--s-4);background:#fff;display:flex;flex-direction:column;justify-content:flex-start;gap:var(--s-3);overflow:visible}
+.chat-msg{display:flex;flex-direction:column;gap:4px;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+.chat-msg.user{align-items:flex-start}
+.chat-msg.agent{align-items:flex-end}
+.chat-role{font-size:11px;color:var(--hint);font-weight:700;margin:0 6px}
+.chat-bubble{max-width:85%;padding:10px 14px;border-radius:14px;font-size:13.5px;line-height:1.55}
+.chat-msg.user .chat-bubble{background:#f4f5f7;border:1px solid var(--border);border-bottom-left-radius:4px;color:var(--text)}
+.chat-msg.agent .chat-bubble{background:#fff0f4;border:1px solid #ffd1dc;border-bottom-right-radius:4px;color:var(--text)}
+.chat-bubble code{font-family:var(--mono);font-size:12px;background:rgba(0,0,0,0.04);padding:1px 4px;border-radius:4px}
+.chat-bubble.kaomoji{white-space:pre-wrap;text-align:left;line-height:1.35}
+.chat-bubble.kaomoji pre{font-family:inherit;white-space:pre-wrap;text-align:left}
+.chat-statusbar{margin-top:auto;padding:10px 12px;background:#f8f9fc;border:1px dashed var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.6;opacity:0;transform:translateY(6px);transition:all .25s ease;white-space:pre-wrap}
+.chat-statusbar.visible{opacity:1;transform:translateY(0)}
+.chat-inputbar{padding:12px 14px;border-top:1px solid var(--border);background:#fafbfc;display:flex;gap:8px}
+.chat-inputbar input{flex:1;border:1px solid var(--border);border-radius:20px;padding:8px 14px;font-size:13px}
+.chat-inputbar .send{width:32px;height:32px;border-radius:50%;background:var(--pink);color:#fff;border:0;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px}
+
+/* Terminal-style workflow window */
+.term-window{background:#fff;border:1px solid var(--border);border-radius:var(--r-lg);overflow:visible;box-shadow:0 4px 20px rgba(0,0,0,0.04);display:flex;flex-direction:column;min-height:480px;height:auto;scrollbar-width:none}
+.term-window::-webkit-scrollbar{display:none}
+.term-titlebar{height:40px;background:#f0f2f5;border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:8px;flex-shrink:0}
+.term-title{flex:1;font-family:var(--mono);font-size:12px;color:var(--muted);text-align:center}
+.term-body{padding:var(--s-4);background:#fafbfc;font-family:var(--mono);font-size:12.5px;color:var(--text);display:flex;flex-direction:column;overflow:visible}
+#flowMount{position:relative}
+#termLogs{margin-top:8px;padding-top:8px;border-top:1px solid var(--border);background:#fff;border-radius:0 0 var(--r-md) var(--r-md);overflow:visible}
+.term-log{line-height:1.7;margin-bottom:6px;opacity:0;transition:opacity .2s ease}
+.term-log.visible{opacity:1}
+.term-log .ts{color:var(--hint);margin-right:8px;font-size:11px}
+.term-log .cmd{color:var(--blue);font-weight:600}
+.term-log .ok{color:var(--green)}
+.term-log .agent{color:var(--pink)}
+
+/* Flow grid inside terminal */
+.flow-grid{position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden;margin-top:8px;display:flex;flex-direction:column}
 .flow-line{position:absolute;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1}
-.flow-header{text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc}
-.flow-col{display:flex;flex-direction:column;padding:12px 8px;gap:12px;position:relative;z-index:2}
-.flow-col.agent{background:rgba(251,114,153,0.03)}
-.flow-col.script{background:rgba(0,174,236,0.03);border-left:1.5px dashed #e0e3eb}
-.flow-col.output{background:rgba(0,184,148,0.03);border-left:1.5px dashed #e0e3eb}
-.flow-step{display:flex;align-items:flex-start;justify-content:center;min-height:80px}
+.flow-header{text-align:center;padding:14px 6px;font-size:10px;font-weight:800;color:#7a8194;letter-spacing:1.2px;border-bottom:2px solid #f0f2f7;background:#fafbfc}
+.flow-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;z-index:2}
+.flow-row.header-row{z-index:4}
+.flow-cell{display:flex;align-items:stretch;justify-content:center;padding:8px 6px;min-height:64px;min-width:0;overflow-wrap:anywhere}
+.flow-cell.agent{background:rgba(251,114,153,0.03)}
+.flow-cell.script{background:rgba(0,174,236,0.03);border-left:1.5px dashed #e0e3eb}
+.flow-cell.output{background:rgba(0,184,148,0.03);border-left:1.5px dashed #e0e3eb}
+.flow-step{display:flex;align-items:stretch;justify-content:center;width:100%;min-width:0}
+.flow-placeholder{width:100%;min-height:32px}
+.node-card{width:100%;border-radius:var(--r-md);padding:8px 8px;border:1px solid var(--border);background:#fff;opacity:0;transform:scale(0.96);transition:all .25s ease;display:flex;flex-direction:column;justify-content:center;box-shadow:0 1px 3px rgba(0,0,0,0.02);word-break:break-word;overflow-wrap:anywhere;min-width:0}
+.node-card.visible{opacity:1;transform:scale(1)}
+.node-card.done{border-color:var(--green)}
+.node-kind{font-size:9px;font-weight:800;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.node-label{font-size:12px;font-weight:700;line-height:1.35;word-break:break-word;overflow-wrap:anywhere}
+.node-detail{font-size:10px;color:var(--muted);margin-top:4px;line-height:1.3;word-break:break-word;overflow-wrap:anywhere}
+.node-progress{height:3px;background:#edf0f5;border-radius:2px;margin-top:8px;overflow:hidden}
+.node-progress > div{height:100%;background:var(--blue);width:0;transition:width .6s ease}
+
+/* Connection lines overlay */
+#connSvg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:visible}
+#connSvg path{fill:none;stroke:var(--green);stroke-width:2;stroke-dasharray:6,4;opacity:0;transition:opacity .3s ease}
+#connSvg path.visible{opacity:1}
+.edge-label{font-family:var(--font);font-size:10px;fill:#003d8f;font-weight:600;opacity:0;transition:opacity .3s ease;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linecap:round;stroke-linejoin:round}
+.edge-label.visible{opacity:1}
+
+/* Outputs section (保留原有样式) */
 .slide-gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .link-row{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--blue)}
 .link-row a{color:var(--blue);text-decoration:none}
 .link-row a:hover{text-decoration:underline}
+
+@media (max-width:900px){
+  .demo-stage{grid-template-columns:1fr}
+  .chat-window,.term-window{height:auto;min-height:480px}
+}
 @media (max-width:640px){
   .container{padding:var(--s-3)}
   .config-grid{grid-template-columns:1fr}
   .flow-grid{grid-template-columns:1fr;overflow-x:hidden}
   .flow-line{display:none}
   .flow-header{display:none}
-  .flow-col.script,.flow-col.output{border-left:none}
+  .flow-cell.script,.flow-cell.output{border-left:none}
+  .flow-placeholder{display:none}
   .slide-gallery-grid{grid-template-columns:repeat(2,1fr)}
 }
 </style>
@@ -63,71 +149,110 @@ input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);bor
     <div class="lab">Agent 配置</div>
     <div class="config-grid">
       <div><label style="font-size:12px;color:var(--hint)">API Key</label><input type="text" value="sk-••••••••••••••••••••" readonly></div>
-      <div><label style="font-size:12px;color:var(--hint)">Base URL</label><input type="text" value="https://api.openai.com/v1" readonly></div>
-      <div><label style="font-size:12px;color:var(--hint)">模型</label><input type="text" value="gpt-4o" readonly></div>
+      <div><label style="font-size:12px;color:var(--hint)">Base URL</label><input type="text" value="https://open.bigmodel.cn/api/paas/v4/" readonly></div>
+      <div><label style="font-size:12px;color:var(--hint)">模型</label><input type="text" value="glm-5.2" readonly></div>
     </div>
   </section>
 
   <section id="skills" class="card" style="margin-bottom:var(--s-4)">
     <div class="lab">三个 Skill</div>
-    <details><summary><b>video-summary</b> — 视频转录与摘要</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">输入视频链接或本地路径，自动获取字幕或 ASR 转录，生成文字摘要。</p></details>
-    <details style="margin-top:var(--s-2)"><summary><b>video-to-slides</b> — 截图与图文讲义</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">自动截图去重、图文对齐、语义整理，输出 Markdown/Word 与思维导图。</p></details>
-    <details style="margin-top:var(--s-2)"><summary><b>feishu-markdown-publish</b> — 飞书云文档发布</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">将整理好的 Markdown 讲义发布到飞书云文档。</p></details>
+    <details class="skill-item">
+      <summary class="skill-summary"><span class="skill-name">video-summary</span><span class="skill-desc">视频转录与摘要</span><span class="skill-chevron">▼</span></summary>
+      <div class="skill-body"><p style="color:var(--muted);font-size:13px">输入视频链接或本地路径，自动获取字幕或 ASR 转录，生成文字摘要。<a class="skill-link" href="https://github.com/jarvislee90s-dot/VideoToDoc-skills/tree/main/.agents/skills/video-summary" target="_blank">GitHub README →</a></p></div>
+    </details>
+    <details class="skill-item" style="margin-top:var(--s-2)">
+      <summary class="skill-summary"><span class="skill-name">video-to-slides</span><span class="skill-desc">截图与图文讲义</span><span class="skill-chevron">▼</span></summary>
+      <div class="skill-body"><p style="color:var(--muted);font-size:13px">自动截图去重、图文对齐、语义整理，输出 Markdown/Word 与思维导图。<a class="skill-link" href="https://github.com/jarvislee90s-dot/VideoToDoc-skills/tree/main/.agents/skills/video-to-slides" target="_blank">GitHub README →</a></p></div>
+    </details>
+    <details class="skill-item" style="margin-top:var(--s-2)">
+      <summary class="skill-summary"><span class="skill-name">feishu-markdown-publish</span><span class="skill-desc">飞书云文档发布</span><span class="skill-chevron">▼</span></summary>
+      <div class="skill-body"><p style="color:var(--muted);font-size:13px">将整理好的 Markdown 讲义发布到飞书云文档。<a class="skill-link" href="https://github.com/jarvislee90s-dot/VideoToDoc-skills/tree/main/.agents/skills/feishu-markdown-publish" target="_blank">GitHub README →</a></p></div>
+    </details>
   </section>
 
-  <section id="chat" class="card" style="margin-bottom:var(--s-4);display:none"></section>
-  <section id="nodeFlow" class="card" style="margin-bottom:var(--s-4);display:none"></section>
-  <section id="outputs" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+  <section id="stage" class="demo-stage" style="display:none">
+    <div class="chat-window">
+      <div class="chat-titlebar">
+        <span class="chat-dot r"></span><span class="chat-dot y"></span><span class="chat-dot g"></span>
+        <div class="chat-title">Agent Chat</div>
+      </div>
+      <div class="chat-body" id="chatBody"></div>
+      <div class="chat-inputbar">
+        <input type="text" value="帮我整理这个 SpaceX 上市视频..." readonly>
+        <button class="send">➤</button>
+      </div>
+    </div>
 
-  <footer style="text-align:center;color:var(--hint);font-size:12px">
+    <div class="term-window">
+      <div class="term-titlebar">
+        <span class="chat-dot r"></span><span class="chat-dot y"></span><span class="chat-dot g"></span>
+        <div class="term-title">Agent Execution Flow — bash</div>
+      </div>
+      <div class="term-body" id="termBody">
+        <div id="flowMount"></div>
+        <div id="termLogs"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="outputs" class="card" style="margin-top:var(--s-4);display:none"></section>
+
+  <footer style="text-align:center;color:var(--hint);font-size:12px;margin-top:var(--s-4)">
     <p><a href="https://github.com/jarvislee90s-dot/VideoToDoc-skills" target="_blank">GitHub</a> · <a href="https://forum.trae.cn/t/topic/30174" target="_blank">报名帖</a></p>
     <p style="margin-top:8px">关键 Session IDs: 6a411c02d4657102f33b1067</p>
   </footer>
 </div>
+
 <script>
 const DEMO_DATA = {
   chatScript: [
-    {role: "user", text: "帮我整理这个 SpaceX 上市视频： https://www.youtube.com/watch?v=SpaceX...", afterNode: -1},
-    {role: "agent", text: "收到。我将依次调用 video-summary、video-to-slides、feishu-markdown-publish 三个 Skill 完成处理。", afterNode: -1},
-    {role: "agent", text: "已读取 video-summary/SKILL.md，开始执行 process.py 下载视频并 ASR 转录。", afterNode: 0},
-    {role: "agent", text: "video-summary 完成：已生成 transcript.json 与视频摘要。", afterNode: 3},
-    {role: "agent", text: "已读取 video-to-slides/SKILL.md，开始截图、去重并与文字对齐。", afterNode: 4},
-    {role: "agent", text: "video-to-slides 完成：已生成讲义 Markdown、思维导图与 Word 文档。", afterNode: 8},
-    {role: "agent", text: "已读取 feishu-markdown-publish/SKILL.md，正在上传飞书云文档。", afterNode: 9},
-    {role: "agent", text: "已将讲义发布到飞书云文档，全部完成。", afterNode: 14}
+    {role: "user", text: "帮我整理这个 SpaceX 上市视频：<br><code>https://www.youtube.com/watch?v=SpaceX...</code><br><br>请显式依次调用以下 3 个 Skill 完成处理：<br>1. <code>video-summary</code>：下载视频、ASR 转录并生成文字摘要<br>2. <code>video-to-slides</code>：截图去重、图文对齐，输出 Markdown/Word 讲义与思维导图<br>3. <code>feishu-markdown-publish</code>：将整理好的 Markdown 讲义发布到飞书云文档", afterNode: -1},
+    {role: "agent", text: "收到。我将按你指定的顺序，依次调用 <code>video-summary</code>、<code>video-to-slides</code>、<code>feishu-markdown-publish</code> 三个 Skill。", afterNode: -1},
+    {role: "agent", text: "已读取 <code>video-summary/SKILL.md</code>，现在调用 <code>process.py</code> 下载视频并 ASR 转录。", afterNode: 0},
+    {role: "agent", text: "<b>video-summary 完成</b>：已生成视频摘要。接下来读取 <code>video-to-slides</code> 的 SKILL.md。", afterNode: 3},
+    {role: "agent", text: "已读取 <code>video-to-slides/SKILL.md</code>，现在开始截图、去重并与文字对齐。", afterNode: 5},
+    {role: "agent", text: "<b>video-to-slides 完成</b>。接下来读取飞书发布 Skill。", afterNode: 8},
+    {role: "agent", text: "已读取 <code>feishu-markdown-publish/SKILL.md</code>，正在上传飞书云文档。", afterNode: 10},
+    {role: "agent", text: "已将讲义发布到飞书云文档，<b>全部完成</b>。", afterNode: 14},
+    {role: "agent", text: "<pre>. ∧＿∧\n(˵ ´ ω` ˵)つ ー .+・*。\n⊂　　 ノ 　　　・゜+.\nしーＪ　　　°。+ *´¨)\n　　　　　　　.· ´¸.·*´¨) ¸.·*¨)\n　　　　　　　　(¸.·´ (¸.·'* ♡</pre>", kaomoji: true, afterNode: 14}
   ],
   nodeTimeline: [
     {kind: "agent", row: 0, label: "读取 SKILL.md", detail: "video-summary/SKILL.md"},
     {kind: "agent", row: 1, label: "调用脚本", detail: "process.py --url ..."},
-    {kind: "script", row: 0, label: "运行中", detail: "下载 → ASR → 摘要", progress: 65},
-    {kind: "output", row: 0, label: "已生成", detail: "SpaceX_总结.md", sub: "transcript.json · video.mp4"},
+    {kind: "script", row: 1, label: "运行中", detail: "下载 → ASR → 摘要", progress: 65},
+    {kind: "output", row: 1, label: "已生成", detail: "SpaceX_总结.md", sub: "transcript.json · video.mp4"},
     {kind: "agent", row: 2, label: "Agent 接收", detail: "摘要完成，准备截图对齐"},
     {kind: "agent", row: 3, label: "读取 SKILL.md", detail: "video-to-slides/SKILL.md"},
     {kind: "agent", row: 4, label: "调用脚本", detail: "process.py video.mp4 --transcript ..."},
-    {kind: "script", row: 1, label: "运行中", detail: "截图 → 对齐 → 讲义", progress: 80},
-    {kind: "output", row: 1, label: "已生成", detail: "SpaceX_讲义_整理版.md", sub: "思维导图.png · 56张截图 · .docx"},
+    {kind: "script", row: 4, label: "运行中", detail: "截图 → 对齐 → 讲义", progress: 80},
+    {kind: "output", row: 4, label: "已生成", detail: "SpaceX_讲义_整理版.md", sub: "思维导图.png · 56张截图 · .docx"},
     {kind: "agent", row: 5, label: "Agent 接收", detail: "讲义完成，准备发布"},
     {kind: "agent", row: 6, label: "读取 SKILL.md", detail: "feishu-publish/SKILL.md"},
     {kind: "agent", row: 7, label: "调用脚本", detail: "publish_markdown.py 讲义.md"},
-    {kind: "script", row: 2, label: "运行中", detail: "上传飞书云文档", progress: 90},
-    {kind: "output", row: 2, label: "已发布", detail: "飞书云文档链接", sub: "bcniplbzchv5.feishu.cn/docx/..."},
+    {kind: "script", row: 7, label: "运行中", detail: "上传飞书云文档", progress: 90},
+    {kind: "output", row: 7, label: "已发布", detail: "飞书云文档链接", sub: "bcniplbzchv5.feishu.cn/docx/..."},
     {kind: "agent", row: 8, label: "全部完成", detail: "视频已转为图文讲义并发布到飞书"}
   ],
   edges: [
-    {from: 1, to: 2, label: "调用"},
-    {from: 2, to: 3, label: "生成"},
-    {from: 3, to: 4, label: "输入"},
-    {from: 4, to: 5, label: "读取"},
-    {from: 6, to: 7, label: "调用"},
-    {from: 7, to: 8, label: "生成"},
-    {from: 8, to: 9, label: "输入"},
-    {from: 9, to: 10, label: "读取"},
-    {from: 11, to: 12, label: "调用"},
-    {from: 12, to: 13, label: "发布"}
+    {from: 0, to: 1, label: "读取 SKILL 后调用脚本"},
+    {from: 1, to: 2, label: "触发脚本运行"},
+    {from: 2, to: 3, label: "生成摘要文件"},
+    {from: 3, to: 4, label: "摘要输入下一阶段"},
+    {from: 4, to: 5, label: "接收后读取新 SKILL"},
+    {from: 5, to: 6, label: "调用截图脚本"},
+    {from: 6, to: 7, label: "触发截图与对齐"},
+    {from: 7, to: 8, label: "生成讲义文件"},
+    {from: 8, to: 9, label: "讲义输入发布阶段"},
+    {from: 9, to: 10, label: "接收后读取发布 SKILL"},
+    {from: 10, to: 11, label: "调用发布脚本"},
+    {from: 11, to: 12, label: "触发飞书上传"},
+    {from: 12, to: 13, label: "生成飞书文档链接"},
+    {from: 13, to: 14, label: "发布完成"}
   ],
   outputs: null
 };
 
+// 产物展示：优先读 manifest.json，失败则回退硬编码
 const FALLBACK_OUTPUTS = {
   summary: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_总结_20260630_231231.md",
   lecture: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_整理版_20260630_232710.md",
@@ -168,296 +293,145 @@ async function loadOutputs() {
   }
 }
 
-const AgentChat = {
-  queue: [],
-  nextIdx: 0,
-  timer: null,
-  reset() {
-    this.queue = [];
-    this.nextIdx = 0;
-    if (this.timer) {
-      clearInterval(this.timer);
-      this.timer = null;
-    }
-  },
-  add(msg) {
-    this.queue.push(msg);
-    if (!this.timer) this._startTimer();
-  },
-  trigger(afterNode) {
-    DEMO_DATA.chatScript.forEach((msg, idx) => {
-      if (msg.afterNode === afterNode && !msg._shown) {
-        msg._shown = true;
-        this.add({...msg, originalIdx: idx});
-      }
-    });
-  },
-  _startTimer() {
-    if (this.timer) return;
-    this.timer = setInterval(() => this._showNext(), 900);
-  },
-  _showNext() {
-    if (this.nextIdx >= this.queue.length) return;
-    const msg = this.queue[this.nextIdx++];
-    const el = document.getElementById("chat");
-    const div = document.createElement("div");
-    div.style.cssText = `margin-bottom:12px;display:flex;${msg.role === "agent" ? "justify-content:flex-end" : ""}`;
-    const bubble = document.createElement("div");
-    bubble.textContent = msg.text;
-    bubble.style.cssText = msg.role === "agent"
-      ? "background:#fff0f4;border:1px solid #FB7299;color:#18191C;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px"
-      : "background:#f4f5f7;border:1px solid #e3e5e7;color:#18191C;border-radius:12px 12px 12px 0;padding:10px 14px;max-width:80%;font-size:13px";
-    div.appendChild(bubble);
-    el.appendChild(div);
-    el.scrollTop = el.scrollHeight;
-  },
-  start() {
-    const el = document.getElementById("chat");
-    el.style.display = "block";
-    el.innerHTML = "";
-    this.reset();
-    DEMO_DATA.chatScript.forEach(m => m._shown = false);
-    this.trigger(-1);
-  }
-};
+function pad(n){return n<10?"0"+n:n}
+function formatTime(d){return `[${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}]`}
+function ts(){return formatTime(new Date())}
 
-document.getElementById("startBtn").addEventListener("click", async () => {
-  const btn = document.getElementById("startBtn");
-  btn.disabled = true;
-  btn.textContent = "加载配置...";
-  await loadOutputs();
-  btn.textContent = "运行中...";
-  AgentChat.start();
-  NodeFlow.render();
-  ConnectionLines.init();
-  let step = 0;
-  const run = async () => {
-    if (step > 0) {
-      NodeFlow.complete(step - 1);
-      AgentChat.trigger(step - 1);
-    }
-    if (step >= DEMO_DATA.nodeTimeline.length) {
-      btn.textContent = "已完成";
-      drawAllEdges();
-      await OutputPanel.show();
-      return;
-    }
-    NodeFlow.activate(step);
-    step++;
-    setTimeout(run, 1000);
-  };
-  setTimeout(run, 400);
-});
-</script>
+let DEMO_START_TIME=null;
+const NODE_TIME_OFFSETS=[0,5,25,120,125,130,135,160,420,425,430,435,460,600,615];
 
-<script>
-const NodeFlow = {
-  render() {
-    const el = document.getElementById("nodeFlow");
-    el.style.display = "block";
-    const groups = {agent: [], script: [], output: []};
-    DEMO_DATA.nodeTimeline.forEach((step, idx) => {
-      groups[step.kind].push({step, idx});
-    });
-    const colClass = (kind) => kind === "agent" ? "agent" : kind === "script" ? "script" : "output";
-    const colTitle = (kind) => kind === "agent" ? "🤖 AGENT 操作" : kind === "script" ? "⚙️ 脚本执行" : "📄 产出文件";
-    const header = (kind) => `<div class="flow-header">${colTitle(kind)}</div>`;
-    const column = (kind, items) => `
-      <div class="flow-col ${colClass(kind)}">
-        ${items.map(({step, idx}) => this.renderStep(step, idx)).join("")}
-      </div>
-    `;
-    el.innerHTML = `
-      <div class="lab">Agent 执行流</div>
-      <div id="flowGrid" class="flow-grid">
-        <div class="flow-line" style="left:33.33%"></div>
-        <div class="flow-line" style="left:66.66%"></div>
-        ${header("agent")}${header("script")}${header("output")}
-        ${column("agent", groups.agent)}${column("script", groups.script)}${column("output", groups.output)}
-      </div>
-    `;
-  },
-  renderStep(step, idx) {
-    const color = step.kind === "agent" ? "#FB7299" : step.kind === "script" ? "#00AEEC" : "#00B894";
-    return `
-      <div id="step-${idx}" data-kind="${step.kind}" data-row="${step.row}" class="flow-step">
-        <div class="node-card" style="background:#fff;border:1px solid #e8eaf1;border-radius:10px;padding:10px 12px;width:100%;opacity:0;transition:all 0.3s ease">
-          <div style="font-size:11px;font-weight:700;color:${color};margin-bottom:3px">${step.label}</div>
-          <div style="font-size:12px;color:#61666D">${step.detail}</div>
-          ${step.sub ? `<div style="font-size:11px;color:#9499A0;margin-top:3px">${step.sub}</div>` : ""}
-          ${step.progress ? `<div style="margin-top:8px;height:3px;background:#e0e3eb;border-radius:2px;overflow:hidden"><div class="progress" style="width:0%;height:100%;background:${color};transition:width 0.8s ease"></div></div>` : ""}
-        </div>
-      </div>
-    `;
-  },
-  activate(idx) {
-    const cell = document.getElementById(`step-${idx}`);
-    if (!cell) return;
-    const card = cell.querySelector(".node-card");
-    const kind = cell.dataset.kind;
-    const color = kind === "agent" ? "#FB7299" : kind === "script" ? "#00AEEC" : "#00B894";
-    card.style.opacity = "1";
-    card.style.border = `2px solid ${color}`;
-    card.style.boxShadow = `0 0 0 3px ${color}22`;
-    card.style.animation = "pulse 0.8s ease-in-out infinite alternate";
-    const progress = card.querySelector(".progress");
-    if (progress) {
-      setTimeout(() => progress.style.width = DEMO_DATA.nodeTimeline[idx].progress + "%", 50);
-    }
-  },
-  complete(idx) {
-    const cell = document.getElementById(`step-${idx}`);
-    if (!cell) return;
-    const card = cell.querySelector(".node-card");
-    card.style.animation = "none";
-    card.style.boxShadow = "none";
-  }
-};
-
-const style = document.createElement("style");
-style.textContent = `@keyframes pulse { from { transform: scale(1); } to { transform: scale(1.015); } }`;
-document.head.appendChild(style);
-</script>
-
-<script>
-const ConnectionLines = {
+const Chat = {
   el: null,
-  init() {
-    const container = document.getElementById("nodeFlow");
-    if (!container) return;
-    this.clear();
-    this.el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    this.el.setAttribute("id", "connectionSvg");
-    this.el.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3";
-    container.style.position = "relative";
-    container.appendChild(this.el);
-  },
-  draw(fromIdx, toIdx, label, color) {
-    const container = document.getElementById("nodeFlow");
-    const from = document.getElementById(`step-${fromIdx}`);
-    const to = document.getElementById(`step-${toIdx}`);
-    if (!from || !to || !container || !this.el) return;
-    const cr = container.getBoundingClientRect();
-    const fr = from.querySelector(".node-card").getBoundingClientRect();
-    const tr = to.querySelector(".node-card").getBoundingClientRect();
-
-    const fromKind = from.dataset.kind;
-    const toKind = to.dataset.kind;
-    const gap = 24;
-
-    let x1, y1, x2, y2, c1x, c2x;
-    if (fromKind === toKind) {
-      // 同一列内的节点（如 Agent→Agent）使用纵向贝塞尔曲线，避免折返穿过列内卡片
-      x1 = fr.left + fr.width / 2 - cr.left;
-      y1 = fr.bottom - cr.top;
-      x2 = tr.left + tr.width / 2 - cr.left;
-      y2 = tr.top - cr.top;
-      c1x = x1;
-      c2x = x2;
-    } else if (fromKind === "agent" && toKind === "script") {
-      x1 = fr.right - cr.left;
-      y1 = fr.top + fr.height / 2 - cr.top;
-      x2 = tr.left - cr.left;
-      y2 = tr.top + tr.height / 2 - cr.top;
-      c1x = x1 + gap;
-      c2x = x2 - gap;
-    } else if (fromKind === "script" && toKind === "output") {
-      x1 = fr.right - cr.left;
-      y1 = fr.top + fr.height / 2 - cr.top;
-      x2 = tr.left - cr.left;
-      y2 = tr.top + tr.height / 2 - cr.top;
-      c1x = x1 + gap;
-      c2x = x2 - gap;
-    } else if (fromKind === "output" && toKind === "agent") {
-      x1 = fr.left + fr.width / 2 - cr.left;
-      y1 = fr.bottom - cr.top;
-      x2 = tr.left + tr.width / 2 - cr.left;
-      y2 = tr.top - cr.top;
-      c1x = x1;
-      c2x = x2;
-    } else {
-      x1 = fr.left + fr.width / 2 - cr.left;
-      y1 = fr.top + fr.height / 2 - cr.top;
-      x2 = tr.left + tr.width / 2 - cr.left;
-      y2 = tr.top + tr.height / 2 - cr.top;
-      c1x = (x1 + x2) / 2;
-      c2x = c1x;
+  statusBar: null,
+  init(){this.el=document.getElementById("chatBody");this.statusBar=null;},
+  add(msg){
+    const div=document.createElement("div");
+    div.className=`chat-msg ${msg.role}`;
+    const bubbleClass=msg.kaomoji?"chat-bubble kaomoji":"chat-bubble";
+    div.innerHTML=`<div class="chat-role">${msg.role==="user"?"You":"Agent"}</div><div class="${bubbleClass}">${msg.text}</div>`;
+    if(this.statusBar){
+      this.el.insertBefore(div, this.statusBar);
+    }else{
+      this.el.appendChild(div);
     }
-
-    const c1y = y1;
-    const c2y = y2;
-
-    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", `M ${x1},${y1} C ${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`);
-    path.setAttribute("stroke", color);
-    path.setAttribute("stroke-width", "2");
-    path.setAttribute("fill", "none");
-    path.setAttribute("stroke-dasharray", "6,5");
-    const animate = document.createElementNS("http://www.w3.org/2000/svg", "animate");
-    animate.setAttribute("attributeName", "stroke-dashoffset");
-    animate.setAttribute("from", "22");
-    animate.setAttribute("to", "0");
-    animate.setAttribute("dur", "1s");
-    animate.setAttribute("repeatCount", "indefinite");
-    path.appendChild(animate);
-    this.el.appendChild(path);
-
-    const mx = (x1 + x2) / 2;
-    const my = (y1 + y2) / 2;
-    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", mx);
-    text.setAttribute("y", my - 5);
-    text.setAttribute("text-anchor", "middle");
-    text.setAttribute("fill", color);
-    text.setAttribute("font-size", "10");
-    text.setAttribute("font-weight", "700");
-    text.textContent = label;
-    this.el.appendChild(text);
-  },
-  clear() {
-    const old = document.getElementById("connectionSvg");
-    if (old) old.remove();
-    this.el = null;
+    if(msg.role==="agent" && msg.text.includes("全部完成") && !this.statusBar){
+      this.statusBar=document.createElement("div");
+      this.statusBar.className="chat-statusbar";
+      this.statusBar.innerHTML=`┌─ Agent Runtime Status ───────────────┐\n│ Context length : 14.6k tokens        │\n│ Tokens used    : 10.2k               │\n│ Model          : glm-5.2             │\n│ Est. cost      : ¥0.034              │\n└──────────────────────────────────────┘`;
+      this.el.appendChild(this.statusBar);
+      setTimeout(()=>this.statusBar.classList.add("visible"), 800);
+    }
   }
 };
 
-function drawAllEdges() {
-  ConnectionLines.clear();
-  ConnectionLines.init();
-  DEMO_DATA.edges.forEach((edge, i) => {
-    setTimeout(() => {
-      ConnectionLines.draw(edge.from, edge.to, edge.label, "#00B894");
-    }, i * 120);
-  });
-}
-</script>
+const Terminal = {
+  el: null,
+  init(){this.el=document.getElementById("termLogs");},
+  log(html, cls="", timeStr=null){
+    const div=document.createElement("div");
+    div.className="term-log";
+    div.innerHTML=`<span class="ts">${timeStr || ts()}</span><span class="${cls}">${html}</span>`;
+    this.el.appendChild(div);
+    setTimeout(()=>div.classList.add("visible"),30);
+  }
+};
 
-<script>
-const OutputPanel = {
-  escapeHtml(text) {
-    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
-  },
-  validateUrl(url) {
-    try {
-      const u = new URL(url);
-      return u.protocol === "http:" || u.protocol === "https:";
-    } catch (e) {
-      return false;
+const NodeFlow = {
+  render(){
+    const mount=document.getElementById("flowMount");
+    const maxRow=Math.max(...DEMO_DATA.nodeTimeline.map(s=>s.row));
+    const rows=[];
+    for(let r=0;r<=maxRow;r++){
+      const cells={agent:null,script:null,output:null};
+      DEMO_DATA.nodeTimeline.forEach((step,idx)=>{if(step.row===r)cells[step.kind]={step,idx}});
+      rows.push(cells);
     }
+    const colTitle=k=>k==="agent"?"AGENT":k==="script"?"SCRIPT":"OUTPUT";
+    const header=k=>`<div class="flow-header">${colTitle(k)}</div>`;
+    const cell=(k,item)=>`<div class="flow-cell ${k}">${item?this.step(item.step,item.idx):`<div class="flow-placeholder"></div>`}</div>`;
+    const row=(cells,r)=>`<div class="flow-row" data-row="${r}">${cell("agent",cells.agent)}${cell("script",cells.script)}${cell("output",cells.output)}</div>`;
+    mount.innerHTML=`<div class="flow-grid" id="flowGrid"><div class="flow-line" style="left:33.33%"></div><div class="flow-line" style="left:66.66%"></div><div class="flow-row header-row">${header("agent")}${header("script")}${header("output")}</div>${rows.map((c,r)=>row(c,r)).join("")}<svg id="connSvg"></svg></div>`;
   },
-  safeUrl(url) {
-    return this.validateUrl(url) ? this.escapeHtml(url) : "#";
+  step(step,idx){
+    const color=step.kind==="agent"?"#FB7299":step.kind==="script"?"#00AEEC":"#00B894";
+    const progress=step.progress?`<div class="node-progress"><div id="prog-${idx}"></div></div>`:"";
+    return `<div class="node-card" id="node-${idx}" data-kind="${step.kind}" data-idx="${idx}"><div class="node-kind" style="color:${color}">${step.kind.toUpperCase()}</div><div class="node-label">${step.label}</div><div class="node-detail">${step.detail}${step.sub?`<br><span style="color:#9499A0">${step.sub}</span>`:""}</div>${progress}</div>`;
   },
-  async show() {
-    const el = document.getElementById("outputs");
-    el.style.display = "block";
-    const out = DEMO_DATA.outputs || FALLBACK_OUTPUTS;
-    const summaryRaw = await fetch(out.summary)
-      .then(r => r.ok ? r.text() : "加载失败")
-      .catch(() => "加载失败");
-    const isTruncated = summaryRaw.length > 1200;
-    const summaryDisplay = this.escapeHtml(isTruncated ? summaryRaw.substring(0, 1200) : summaryRaw) + (isTruncated ? "..." : "");
-    el.innerHTML = `
+  activate(idx){
+    const card=document.getElementById(`node-${idx}`);
+    if(card) card.classList.add("visible");
+    const step=DEMO_DATA.nodeTimeline[idx];
+    const timeStr=DEMO_START_TIME ? formatTime(new Date(DEMO_START_TIME.getTime()+NODE_TIME_OFFSETS[idx]*1000)) : ts();
+    if(step.kind==="agent") Terminal.log(`Agent: ${step.label} — ${step.detail}`, "agent", timeStr);
+    else if(step.kind==="script") Terminal.log(`> ${step.detail}`, "cmd", timeStr);
+    else Terminal.log(`✓ ${step.label}: ${step.detail}`, "ok", timeStr);
+  },
+  complete(idx){
+    const card=document.getElementById(`node-${idx}`);
+    if(card)card.classList.add("done");
+    const bar=document.getElementById(`prog-${idx}`);
+    if(bar) bar.style.width="100%";
+  }
+};
+
+const ConnectionLines = {
+  drawFor(maxIdx){
+    const svg=document.getElementById("connSvg");
+    if(!svg)return;
+    const grid=document.getElementById("flowGrid");
+    if(!grid)return;
+    const cr=grid.getBoundingClientRect();
+    svg.setAttribute("viewBox",`0 0 ${cr.width} ${cr.height}`);
+    svg.style.width=cr.width+"px";svg.style.height=cr.height+"px";
+    let html="";
+    DEMO_DATA.edges.forEach(e=>{
+      if(e.from>maxIdx||e.to>maxIdx)return;
+      const f=document.getElementById(`node-${e.from}`);
+      const t=document.getElementById(`node-${e.to}`);
+      if(!f||!t)return;
+      const fr=f.getBoundingClientRect(),tr=t.getBoundingClientRect();
+      const fRow=parseInt(f.closest('.flow-row').dataset.row);
+      const tRow=parseInt(t.closest('.flow-row').dataset.row);
+      let x1,y1,x2,y2,path,labelX,labelY;
+      let labelTransform="";
+      if(fRow===tRow){
+        x1=fr.right-cr.left;y1=fr.top+fr.height/2-cr.top;
+        x2=tr.left-cr.left;y2=tr.top+tr.height/2-cr.top;
+        const c1x=x1+48,c1y=y1,c2x=x2-48,c2y=y2;
+        path=`M${x1},${y1} C${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`;
+        labelX=(x1+x2)/2;labelY=(y1+y2)/2;
+        labelTransform=`transform="rotate(90, ${labelX}, ${labelY})"`;
+      }else{
+        x1=fr.left+fr.width/2-cr.left;y1=fr.bottom-cr.top;
+        x2=tr.left+tr.width/2-cr.left;y2=tr.top-cr.top;
+        const midY=(y1+y2)/2;
+        path=`M${x1},${y1} V${midY} H${x2} V${y2}`;
+        labelX=(x1+x2)/2;labelY=(y1+y2)/2;
+      }
+      html+=`<path id="edge-${e.from}-${e.to}" d="${path}"/>`;
+      if(e.label) html+=`<text class="edge-label" id="label-${e.from}-${e.to}" x="${labelX}" y="${labelY}" text-anchor="middle" ${labelTransform}>${e.label}</text>`;
+    });
+    svg.innerHTML=html;
+    setTimeout(()=>{
+      Array.from(svg.querySelectorAll("path")).forEach(p=>p.classList.add("visible"));
+      Array.from(svg.querySelectorAll(".edge-label")).forEach(t=>t.classList.add("visible"));
+    },30);
+  }
+};
+
+// 产物展示：保持原 demo.html 中的 6 个板块
+const OutputPanel = {
+  escapeHtml(text){return text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#039;");},
+  validateUrl(url){try{const u=new URL(url);return u.protocol==="http:"||u.protocol==="https:";}catch(e){return false;}},
+  safeUrl(url){return this.validateUrl(url)?this.escapeHtml(url):"#";},
+  async show(){
+    const el=document.getElementById("outputs");
+    el.style.display="block";
+    const out=DEMO_DATA.outputs||FALLBACK_OUTPUTS;
+    const summaryRaw=await fetch(out.summary).then(r=>r.ok?r.text():"加载失败").catch(()=>"加载失败");
+    const isTruncated=summaryRaw.length>1200;
+    const summaryDisplay=this.escapeHtml(isTruncated?summaryRaw.substring(0,1200):summaryRaw)+(isTruncated?"...":"");
+    el.innerHTML=`
       <div class="lab">产物展示</div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">1. 视频摘要</h3>
@@ -475,7 +449,7 @@ const OutputPanel = {
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">4. 关键截图</h3>
         <div class="slide-gallery-grid">
-          ${out.slides.map(url => `<a href="${this.safeUrl(url)}" target="_blank"><img src="${this.safeUrl(url)}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide"></a>`).join("")}
+          ${out.slides.map(url=>`<a href="${this.safeUrl(url)}" target="_blank"><img src="${this.safeUrl(url)}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide"></a>`).join("")}
         </div>
       </div>
       <div style="margin-bottom:24px">
@@ -490,7 +464,48 @@ const OutputPanel = {
     `;
   }
 };
-</script>
 
+document.getElementById("startBtn").addEventListener("click", async ()=>{
+  const btn=document.getElementById("startBtn");
+  btn.disabled=true;btn.textContent="加载配置...";
+  await loadOutputs();
+  btn.textContent="运行中...";
+  DEMO_START_TIME=new Date();
+  document.getElementById("stage").style.display="grid";
+  Chat.init(); Terminal.init();
+  Chat.el.innerHTML="";document.getElementById("termLogs").innerHTML="";
+  NodeFlow.render();
+
+  // 构造统一时间线：先展示 afterNode=-1 的对话，然后每 1 秒交替出现节点与其后续对话
+  const timeline=[];
+  DEMO_DATA.chatScript.forEach((m,idx)=>{if(m.afterNode===-1)timeline.push({type:"chat",idx})});
+  DEMO_DATA.nodeTimeline.forEach((node,nodeIdx)=>{
+    timeline.push({type:"node",idx:nodeIdx});
+    DEMO_DATA.chatScript.forEach((m,idx)=>{if(m.afterNode===nodeIdx)timeline.push({type:"chat",idx})});
+  });
+
+  let step=0;
+  const run=async ()=>{
+    if(step>=timeline.length){
+      btn.textContent="已完成";
+      // 全流程结束后，再显示下方产物展示
+      await OutputPanel.show();
+      return;
+    }
+    const item=timeline[step];
+    if(item.type==="chat") Chat.add(DEMO_DATA.chatScript[item.idx]);
+    else{
+      NodeFlow.activate(item.idx);
+      setTimeout(()=>{
+        NodeFlow.complete(item.idx);
+        ConnectionLines.drawFor(item.idx);
+      },400);
+    }
+    step++;
+    setTimeout(run,1000);
+  };
+  setTimeout(run,400);
+});
+</script>
 </body>
 </html>

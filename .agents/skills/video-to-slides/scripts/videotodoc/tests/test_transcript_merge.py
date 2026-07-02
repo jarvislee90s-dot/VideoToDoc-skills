@@ -26,6 +26,38 @@ class TestSuggestSegments:
         assert s["target_segments"] >= 8
         assert s["chars_per_group_range"] == "30-120"
 
+    def test_legacy_signature_unchanged(self):
+        # Constitution III 非协商回归门：旧签名逐字节等价（auto 路径不新增任何键）
+        assert suggest_segments(690_000) == {
+            "target_segments": 34,
+            "per_group_range": "3-8",
+            "max_segments": 120,
+            "chars_per_group_range": "30-120",
+        }
+        assert suggest_segments(3_600_000)["target_segments"] == 90
+        assert suggest_segments(7_200_000) == {
+            "target_segments": 144,
+            "per_group_range": "12-25",
+            "max_segments": 240,
+            "chars_per_group_range": "120-400",
+        }
+
+    def test_auto_path_has_no_archetype_field(self):
+        # auto 路径字节等价旧返回 → 不应冒出 archetype/strategy 键
+        s = suggest_segments(690_000)
+        assert "archetype" not in s
+        assert "strategy" not in s
+
+    def test_archetype_overrides_ranges(self):
+        s = suggest_segments(690_000, archetype="rescan_grid")
+        assert s["chars_per_group_range"] == "60-220"   # 来自原型④而非时长档 30-120
+        assert s["per_group_range"] == "5-12"           # 来自原型④
+        assert s["target_segments"] == 34               # target 仍取自时长档
+        assert s["max_segments"] == 120                # max 仍取自时长档
+        assert s["archetype"] == "rescan_grid"
+        assert s["strategy"]["principle"]               # 原则非空
+        assert "slide_change" not in s["strategy"]["anchors"]  # ④ 锚点不含视觉
+
 
 class TestValidateGroups:
     def test_valid_cover(self):

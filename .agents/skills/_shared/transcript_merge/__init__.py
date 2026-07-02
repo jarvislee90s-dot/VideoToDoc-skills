@@ -2,42 +2,33 @@
 
 agent 负责语义分组与文字整理，脚本只算目标段数建议、校验 index 结构、
 重算时间戳。校验只查 index，不查 text。
+
+suggest_segments 委托 strategies.resolve_suggestion：auto/未知原型字节等价旧逻辑
+（Constitution III），已知原型按时长档 target/max + 原型策略 ranges 组合。
 """
 from __future__ import annotations
+
+from .strategies import resolve_suggestion  # noqa: E402  （strategies 不反向依赖 __init__，无循环导入）
 
 
 def _seconds_to_ms(seconds: float) -> int:
     return max(0, int(round(float(seconds) * 1000)))
 
 
-def suggest_segments(duration_ms: int) -> dict:
-    """按视频时长决定目标段数建议、每段短句数范围和字数区间。段数为软目标，同话题完整优先。"""
-    duration_sec = duration_ms / 1000
-    duration_min = duration_sec / 60
-    if duration_min <= 15:
-        target = max(8, int(duration_sec / 20))
-        per_group = "3-8"
-        chars_range = "30-120"
-    elif duration_min <= 30:
-        target = max(12, int(duration_sec / 30))
-        per_group = "5-12"
-        chars_range = "50-180"
-    elif duration_min <= 60:
-        target = max(20, int(duration_sec / 40))
-        per_group = "8-18"
-        chars_range = "80-270"
-    else:
-        target = max(30, int(duration_sec / 50))
-        per_group = "12-25"
-        chars_range = "120-400"
-    max_seg = int(duration_min * 2) if duration_min > 60 else 120
-    target = min(target, max_seg)
-    return {
-        "target_segments": target,
-        "per_group_range": per_group,
-        "max_segments": max_seg,
-        "chars_per_group_range": chars_range,
-    }
+def suggest_segments(
+    duration_ms: int,
+    archetype: str = "auto",
+    visual_signals: dict | None = None,
+) -> dict:
+    """按视频时长 + 结构形态原型决定分段建议。段数为软目标，同话题完整优先。
+
+    - ``suggest_segments(duration_ms)``：archetype 缺省 ``"auto"``，返回值逐字节等价改动前
+      （Constitution III 非协商回归门，旧 4 键 dict，无 archetype/strategy 键）。
+    - ``suggest_segments(duration_ms, archetype=<已知原型>)``：target/max 取自时长档，
+      per_group/chars 取自原型策略，附 ``archetype`` + ``strategy``。
+    - visual_signals 为原型③预留，当前透传（③实际消费在后续任务）。
+    """
+    return resolve_suggestion(duration_ms, archetype, visual_signals)
 
 
 def validate_groups(groups: list, n_segments: int) -> tuple[bool, str]:
