@@ -17,14 +17,17 @@ def render_mindmap_and_refresh_docs(
     image_path: Path | None = None,
     use_mermaid: bool = False,
 ) -> tuple[list[Path], list[Path]]:
-    """使用 Mermaid tidy-tree 渲染思维导图，并刷新所有 Markdown/Word 文档。"""
+    """使用 Mermaid tidy-tree 渲染思维导图，并生成/刷新所有 Markdown/Word 文档。"""
     del use_mermaid  # 已废弃，保留参数兼容性
 
     run_dir = run_dir.resolve()
     mindmap_path = mindmap_path or (run_dir / "mindmap.mmd")
     image_path = image_path or (run_dir / "mindmap.png")
     if not mindmap_path.exists():
-        raise VideoToDocError(f"找不到 Mermaid 源文件：{mindmap_path}")
+        raise VideoToDocError(
+            f"找不到 Mermaid 源文件：{mindmap_path}。"
+            "请先完成 Agent 整理步骤并编写 mindmap.mmd，再运行此脚本。"
+        )
 
     raw_text = mindmap_path.read_text(encoding="utf-8")
     numbered = add_chapter_numbers(raw_text)
@@ -40,16 +43,35 @@ def render_mindmap_and_refresh_docs(
     image_paths = [image_path]
 
     refreshed: list[Path] = []
-    for md_file in run_dir.glob("*.md"):
-        if "质量报告" in md_file.name:
-            continue
-        ensure_mindmap_link(md_file, image_paths)
-        docx_file = md_file.with_suffix(".docx")
-        if docx_file.exists():
-            generated = markdown_to_docx(md_file, docx_file)
-            if generated:
-                refreshed.append(generated)
+    md_files = [p for p in run_dir.glob("*.md") if "质量报告" not in p.name]
+
+    # 按目标 docx 分组；原始版与紧凑版会映射到同一 docx，优先采用紧凑版
+    grouped: dict[Path, list[Path]] = {}
+    for md_file in md_files:
+        grouped.setdefault(_docx_path_for_markdown(md_file), []).append(md_file)
+
+    for docx_file, sources in grouped.items():
+        # 若同时存在紧凑版和其他版本，优先用紧凑版生成 docx
+        preferred = next(
+            (p for p in sources if "_讲义_紧凑版_" in p.stem),
+            sources[0],
+        )
+        for md_file in sources:
+            ensure_mindmap_link(md_file, image_paths)
+        generated = markdown_to_docx(preferred, docx_file)
+        if generated:
+            refreshed.append(generated)
+
     return image_paths, refreshed
+
+
+def _docx_path_for_markdown(md_path: Path) -> Path:
+    """保持旧命名约定：紧凑版 Markdown 对应 _讲义_.docx，整理版保持同名。"""
+    name = md_path.stem
+    if "_讲义_紧凑版_" in name:
+        slug, ts = name.split("_讲义_紧凑版_", 1)
+        return md_path.with_name(f"{slug}_讲义_{ts}.docx")
+    return md_path.with_suffix(".docx")
 
 
 def _verify_png_size(png_path: Path, max_size: int = 8000) -> None:

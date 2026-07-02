@@ -11,24 +11,33 @@ def _seconds_to_ms(seconds: float) -> int:
 
 
 def suggest_segments(duration_ms: int) -> dict:
-    """按视频时长决定目标段数建议。段数为软目标，同话题完整优先。"""
+    """按视频时长决定目标段数建议、每段短句数范围和字数区间。段数为软目标，同话题完整优先。"""
     duration_sec = duration_ms / 1000
     duration_min = duration_sec / 60
     if duration_min <= 15:
         target = max(8, int(duration_sec / 20))
         per_group = "3-8"
+        chars_range = "30-120"
     elif duration_min <= 30:
         target = max(12, int(duration_sec / 30))
         per_group = "5-12"
+        chars_range = "50-180"
     elif duration_min <= 60:
         target = max(20, int(duration_sec / 40))
         per_group = "8-18"
+        chars_range = "80-270"
     else:
         target = max(30, int(duration_sec / 50))
         per_group = "12-25"
+        chars_range = "120-400"
     max_seg = int(duration_min * 2) if duration_min > 60 else 120
     target = min(target, max_seg)
-    return {"target_segments": target, "per_group_range": per_group, "max_segments": max_seg}
+    return {
+        "target_segments": target,
+        "per_group_range": per_group,
+        "max_segments": max_seg,
+        "chars_per_group_range": chars_range,
+    }
 
 
 def validate_groups(groups: list, n_segments: int) -> tuple[bool, str]:

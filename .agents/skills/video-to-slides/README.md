@@ -1,6 +1,6 @@
 # Video-to-Slides Skill
 
-> 视频截图去重 → 图文对齐 → 语义整理 → 目录 → 思维导图 → Word
+> 视频截图去重 → 图文对齐 → 语义整理 → 目录 → Agent 思维导图 → render_mindmap → Word
 
 ## 功能
 
@@ -60,9 +60,16 @@ video-summary   │
           └──────┬──────┘
                  │
                  ▼
-            Word 输出
+        ┌─────────────────┐
+        │ render_mindmap  │
+        │  渲染导图 + Word │
+        └────────┬────────┘
+                 │
+                 ▼
+            Word / PNG 输出
          <标题>_讲义.docx
       <标题>_讲义_整理版.docx
+       <标题>_思维导图.png
 ```
 
 ## 前置依赖
@@ -75,15 +82,17 @@ video-summary   │
 
 ## 产物
 
+> 注：`.docx` 与 `.png` 由 `render_mindmap.py` 在 Agent 完成整理后生成。
+
 ```
 runs/<视频标题>_<时间戳>/
 ├── <视频标题>_讲义_<时间戳>.md              # 原始换行版
 ├── <视频标题>_讲义_紧凑版_<时间戳>.md       # 紧凑段落版
-├── <视频标题>_讲义_整理版_<时间戳>.md       # 书面整理版
-├── <视频标题>_讲义_<时间戳>.docx           # 原文 Word
-├── <视频标题>_讲义_整理版_<时间戳>.docx     # 整理版 Word
-├── <视频标题>_思维导图_<时间戳>.mmd         # Mermaid 导图源文件
-├── <视频标题>_思维导图_<时间戳>.png         # 渲染后的导图
+├── <视频标题>_讲义_整理版_<时间戳>.md       # 书面整理版（Agent 工作文件）
+├── <视频标题>_讲义_<时间戳>.docx           # 原文 Word（render_mindmap 生成）
+├── <视频标题>_讲义_整理版_<时间戳>.docx     # 整理版 Word（render_mindmap 生成）
+├── <视频标题>_思维导图_<时间戳>.mmd         # Mermaid 导图源文件（Agent 编写）
+├── <视频标题>_思维导图_<时间戳>.png         # 渲染后的导图（render_mindmap 生成）
 ├── <视频标题>_质量报告_<时间戳>.md          # 质量报告
 └── selected_slides_<模式>_<参数>/          # 最终截图
 ```
@@ -91,7 +100,7 @@ runs/<视频标题>_<时间戳>/
 ## 快速开始
 
 ```bash
-# 标准流程（需要已有视频和转录）
+# 标准流程（需要已有视频和转录，仅生成 Markdown）
 # 注意：video-summary 下载的视频文件名是 <视频标题>.mp4，不是 video.mp4
 python3 scripts/process.py "/path/to/<视频标题>.mp4"
 
@@ -99,6 +108,9 @@ python3 scripts/process.py "/path/to/<视频标题>.mp4"
 python3 scripts/process.py \
   "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
   --transcript "runs/<视频标题>_<时间戳>/transcript.json"
+
+# Agent 完成目录、语义整理、手写 mindmap.mmd 后，生成最终导图与 Word
+python3 scripts/render_mindmap.py "runs/<视频标题>_<时间戳>"
 ```
 
 ## 文件结构

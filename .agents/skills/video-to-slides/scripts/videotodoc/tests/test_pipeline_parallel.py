@@ -139,27 +139,14 @@ class TestPipelineParallel:
         def mock_align(slideset, transcript, offset):
             return [Section(slide_index=1, image_path="", start_ms=0, end_ms=10000, capture_ms=8000, transcript="测试内容", segment_indexes=[0])]
 
-        def mock_gen_mindmap(title, sections, path, settings):
-            path.write_text("mindmap", encoding="utf-8")
-            return "mm"
-
-        def mock_render_mindmap(rd, mindmap_path=None, image_path=None):
-            if image_path:
-                _make_test_image(image_path, (200, 200, 200))
-            return [image_path] if image_path else [], []
-
         def mock_render_orig(title, sections, path):
             path.write_text("# orig", encoding="utf-8")
 
-        def mock_render_compact(title, sections, path, mm=None):
+        def mock_render_compact(title, sections, path, mindmap_image_path=None):
             path.write_text("# compact", encoding="utf-8")
 
-        def mock_ensure_semantic(title, sections, path, mm=None):
+        def mock_ensure_semantic(title, sections, path, mindmap_image_path=None):
             path.write_text("# semantic", encoding="utf-8")
-
-        def mock_md2docx(md, docx):
-            docx.write_bytes(b"docx")
-            return docx
 
         def mock_quality(path, transcript, slides, sections, offset):
             path.write_text("# quality", encoding="utf-8")
@@ -172,12 +159,9 @@ class TestPipelineParallel:
              patch("videotodoc.pipeline.materialize_selected_slides", side_effect=mock_materialize), \
              patch("videotodoc.pipeline.estimate_sync_offset_ms", side_effect=mock_estimate), \
              patch("videotodoc.pipeline.align_sections", side_effect=mock_align), \
-             patch("videotodoc.pipeline.generate_mindmap", side_effect=mock_gen_mindmap), \
-             patch("videotodoc.pipeline.render_mindmap_and_refresh_docs", side_effect=mock_render_mindmap), \
              patch("videotodoc.pipeline.render_original_markdown", side_effect=mock_render_orig), \
              patch("videotodoc.pipeline.render_compact_markdown", side_effect=mock_render_compact), \
              patch("videotodoc.pipeline.ensure_semantic_markdown", side_effect=mock_ensure_semantic), \
-             patch("videotodoc.pipeline.markdown_to_docx", side_effect=mock_md2docx), \
              patch("videotodoc.pipeline.write_quality_report", side_effect=mock_quality):
 
             start = time.time()
@@ -189,3 +173,8 @@ class TestPipelineParallel:
             f"ASR/detect 并行后总耗时不应包含两者串行叠加"
         )
         assert result.markdown_path.exists()
+        assert result.compact_markdown_path.exists()
+        assert result.semantic_markdown_path.exists()
+        assert result.mindmap_path is None
+        assert result.docx_path is None
+        assert result.semantic_docx_path is None

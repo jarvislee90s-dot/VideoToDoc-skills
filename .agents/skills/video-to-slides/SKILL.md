@@ -21,7 +21,7 @@ description: "在已有视频、音频、字幕的前提下，自动截图去重
 ## 工作流总览（三步中断式）
 
 ```
-capture → review-segments(agent 介入) → finalize
+capture → review-segments(agent 介入) → finalize（仅 Markdown） → render_mindmap（导图 + Word）
 ```
 
 ### capture：时长密度截图 + 分段草案
@@ -83,6 +83,8 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 | `<视频标题>_讲义_<时间戳>.md` | 原始换行版 |
 | `<视频标题>_讲义_紧凑版_<时间戳>.md` | 紧凑段落版 |
 | `<视频标题>_讲义_整理版_<时间戳>.md` | **Agent 工作文件**（含 `<!-- IMAGE:N -->` 占位符） |
+
+> **注意**：此阶段**仅输出 Markdown**，`.docx` 和 `.png` 尚未生成。Agent 完成整理并手写 `mindmap.mmd` 后，需运行 `render_mindmap.py` 生成最终导图与 Word。
 
 ---
 
@@ -174,10 +176,22 @@ python3 scripts/restore_images.py \
 - 如需旧版 Mermaid 圆形散射，可传 `--mermaid` 参数
 - 将 `.mmd` 渲染为 `.png`
 - 当节点过多或单图尺寸过大时，自动按章节拆分为 `mindmap_01.png`、`mindmap_02.png`... 并同步插入 Markdown/Word
+- 同时生成或刷新两份 Word 文档
 
-### ⑩ 生成 Word
+### ⑩ 生成最终导图与 Word
 
-- 重新生成两份 Word 文档
+在 Agent 完成目录插入、语义整理、手写 `mindmap.mmd` 之后，运行：
+
+```bash
+python3 .agents/skills/video-to-slides/scripts/restore_images.py \
+  "runs/<视频标题>_<时间戳>/<视频标题>_讲义_紧凑版_<时间戳>.md" \
+  "runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md"
+
+python3 .agents/skills/video-to-slides/scripts/render_mindmap.py \
+  "runs/<视频标题>_<时间戳>"
+```
+
+`render_mindmap.py` 会一次性渲染思维导图并生成/刷新紧凑版、整理版两份 Word。
 
 ---
 
@@ -189,9 +203,11 @@ python3 scripts/restore_images.py \
 python3 .agents/skills/video-to-slides/scripts/process.py "/path/to/<视频标题>.mp4"
 
 # 指定已有转录（推荐：从 video-summary 产物直接引用）
+# 强烈建议同时传 --run-dir，让产物继续落在 video-summary 的目录里，避免产生第二个文件夹。
 python3 .agents/skills/video-to-slides/scripts/process.py \
   "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
-  --transcript "runs/<视频标题>_<时间戳>/transcript.json"
+  --transcript "runs/<视频标题>_<时间戳>/transcript.json" \
+  --run-dir "runs/<视频标题>_<时间戳>"
 
 # 手工修改思维导图后刷新
 python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标题>_<时间戳>
@@ -265,3 +281,4 @@ runs/<视频标题>_<时间戳>/
 2. 不要只用 dHash 判断白底 PPT，容易误合并
 3. 不要把 key 写进 Skill；飞书依赖本机 lark-cli
 4. 不批量删除文件或目录；产物保留在 `runs/` 下
+5. 复用 `video-summary` 的产物时，建议显式传 `--run-dir`；若视频路径位于 `runs/<标题>_<时间戳>/` 下，脚本会自动推断并复用该目录

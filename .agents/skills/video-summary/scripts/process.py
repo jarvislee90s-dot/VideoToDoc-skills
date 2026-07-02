@@ -871,7 +871,7 @@ def cmd_process(args: argparse.Namespace) -> None:
     video_info = None
     if is_url:
         try:
-            video_info = fetch_video_info(user_input)
+            video_info = fetch_video_info(user_input, proxy=args.proxy)
             title = video_info.get("title")
         except Exception:
             pass

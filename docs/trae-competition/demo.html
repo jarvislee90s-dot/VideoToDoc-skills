@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VideoToDoc Demo · 视频一键变图文讲义</title>
+<style>
+:root{
+  --pink:#FB7299;--blue:#00AEEC;--green:#00B894;
+  --bg:#F8F9FC;--surface:#FFFFFF;--code-bg:#F4F5F7;
+  --text:#18191C;--muted:#61666D;--hint:#9499A0;
+  --border:#E3E5E7;--border-strong:#DEE0E3;
+  --r-sm:4px;--r-md:6px;--r-lg:8px;--r-xl:12px;
+  --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:32px;
+  --font:"-apple-system","PingFang SC","Microsoft YaHei",sans-serif;
+  --mono:"SF Mono",Menlo,monospace;
+  --maxw:1100px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg,#F8F9FC 0%,#fff 30%,#fff 70%,#F8F9FC 100%);line-height:1.6;-webkit-font-smoothing:antialiased}
+.container{max-width:var(--maxw);margin:0 auto;padding:var(--s-5)}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--s-4);box-shadow:0 2px 8px rgba(0,0,0,0.02)}
+.lab{font-size:11px;color:var(--hint);font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:var(--s-3);display:flex;align-items:center;gap:var(--s-2)}
+.lab::before{content:"";width:3px;height:14px;background:var(--pink);display:inline-block}
+.btn{display:inline-block;font-size:14px;font-weight:600;padding:10px 22px;border-radius:var(--r-md);transition:background-color 150ms ease;background:var(--pink);color:#fff;border:0;cursor:pointer}
+.btn:hover{background:#e85d85}
+input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
+.config-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)}
+.flow-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden}
+.slide-gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+@media (max-width:640px){
+  .container{padding:var(--s-3)}
+  .config-grid{grid-template-columns:1fr}
+  .flow-grid{grid-template-columns:1fr;overflow-x:hidden}
+  .flow-grid > .flow-line{display:none}
+  .flow-grid > .flow-header{display:none}
+  .slide-gallery-grid{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="container">
+  <section id="hero" class="card" style="margin-bottom:var(--s-4)">
+    <h1 style="font-size:32px;font-weight:800;margin-bottom:var(--s-2)">VideoToDoc Agent Demo</h1>
+    <p style="color:var(--muted);margin-bottom:var(--s-3)">把一个视频链接交给 Agent，自动完成摘要、讲义、飞书发布。</p>
+    <input type="text" id="videoUrl" value="https://www.youtube.com/watch?v=SpaceX..." readonly>
+    <button class="btn" id="startBtn" style="margin-top:var(--s-3)">开始自动运行</button>
+  </section>
+
+  <section id="config" class="card" style="margin-bottom:var(--s-4)">
+    <div class="lab">Agent 配置</div>
+    <div class="config-grid">
+      <div><label style="font-size:12px;color:var(--hint)">API Key</label><input type="text" value="sk-••••••••••••••••••••" readonly></div>
+      <div><label style="font-size:12px;color:var(--hint)">Base URL</label><input type="text" value="https://api.openai.com/v1" readonly></div>
+      <div><label style="font-size:12px;color:var(--hint)">模型</label><input type="text" value="gpt-4o" readonly></div>
+    </div>
+  </section>
+
+  <section id="skills" class="card" style="margin-bottom:var(--s-4)">
+    <div class="lab">三个 Skill</div>
+    <details><summary><b>video-summary</b> — 视频转录与摘要</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">输入视频链接或本地路径，自动获取字幕或 ASR 转录，生成文字摘要。</p></details>
+    <details style="margin-top:var(--s-2)"><summary><b>video-to-slides</b> — 截图与图文讲义</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">自动截图去重、图文对齐、语义整理，输出 Markdown/Word 与思维导图。</p></details>
+    <details style="margin-top:var(--s-2)"><summary><b>feishu-markdown-publish</b> — 飞书云文档发布</summary><p style="margin-top:var(--s-2);color:var(--muted);font-size:13px">将整理好的 Markdown 讲义发布到飞书云文档。</p></details>
+  </section>
+
+  <section id="chat" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+  <section id="nodeFlow" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+  <section id="outputs" class="card" style="margin-bottom:var(--s-4);display:none"></section>
+
+  <footer style="text-align:center;color:var(--hint);font-size:12px">
+    <p><a href="https://github.com/jarvislee90s-dot/VideoToDoc-skills" target="_blank">GitHub</a> · <a href="https://forum.trae.cn/t/topic/30174" target="_blank">报名帖</a></p>
+    <p style="margin-top:8px">关键 Session IDs: 6a411c02d4657102f33b1067</p>
+  </footer>
+</div>
+<script>
+const DEMO_DATA = {
+  chatScript: [
+    {role: "user", text: "帮我整理这个 SpaceX 上市视频： https://www.youtube.com/watch?v=SpaceX..."},
+    {role: "agent", text: "收到。我将依次调用 video-summary、video-to-slides、feishu-markdown-publish 三个 Skill 完成处理。"},
+    {role: "agent", text: "首先读取 video-summary/SKILL.md，了解转录与摘要流程。"},
+    {role: "agent", text: "开始执行 process.py，下载视频并生成 transcript.json 与总结。"},
+    {role: "agent", text: "video-summary 完成。接下来读取 video-to-slides/SKILL.md。"},
+    {role: "agent", text: "正在截图、去重、图文对齐，生成讲义与思维导图。"},
+    {role: "agent", text: "video-to-slides 完成。最后读取 feishu-markdown-publish/SKILL.md。"},
+    {role: "agent", text: "已将讲义发布到飞书云文档，全部完成。"}
+  ],
+  nodeTimeline: [
+    {kind: "agent", label: "读取 SKILL.md", detail: "video-summary/SKILL.md"},
+    {kind: "agent", label: "调用脚本", detail: "process.py --url ..."},
+    {kind: "script", label: "运行中", detail: "下载 → ASR → 摘要", progress: 65},
+    {kind: "output", label: "已生成", detail: "SpaceX_总结.md", sub: "transcript.json · video.mp4"},
+    {kind: "agent", label: "Agent 接收", detail: "摘要完成，准备截图对齐"},
+    {kind: "agent", label: "读取 SKILL.md", detail: "video-to-slides/SKILL.md"},
+    {kind: "agent", label: "调用脚本", detail: "process.py video.mp4 --transcript ..."},
+    {kind: "script", label: "运行中", detail: "截图 → 对齐 → 讲义", progress: 80},
+    {kind: "output", label: "已生成", detail: "SpaceX_讲义_整理版.md", sub: "思维导图.png · 56张截图 · .docx"},
+    {kind: "agent", label: "Agent 接收", detail: "讲义完成，准备发布"},
+    {kind: "agent", label: "读取 SKILL.md", detail: "feishu-publish/SKILL.md"},
+    {kind: "agent", label: "调用脚本", detail: "publish_markdown.py 讲义.md"},
+    {kind: "script", label: "运行中", detail: "上传飞书云文档", progress: 90},
+    {kind: "output", label: "已发布", detail: "飞书云文档链接", sub: "bcniplbzchv5.feishu.cn/docx/..."},
+    {kind: "agent", label: "全部完成", detail: "视频已转为图文讲义并发布到飞书"}
+  ],
+  outputs: null // 运行时从 manifest.json 加载，失败时回退到 FALLBACK_OUTPUTS
+};
+
+// 硬编码回退：当 file:// 打开或 manifest.json 不可用时使用
+const FALLBACK_OUTPUTS = {
+  summary: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_总结_20260630_231231.md",
+  lecture: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_整理版_20260630_232710.md",
+  mindmap: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_思维导图_渲染_20260630_232710.png",
+  transcript: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/transcript.json",
+  docx: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_20260630_232710.docx",
+  slides: [
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0001.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0005.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0010.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0015.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0020.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0030.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0040.png",
+    "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/selected_slides/0050.png"
+  ],
+  feishu: "https://bcniplbzchv5.feishu.cn/docx/VtMldBO8koF4xTxuOQlck9Zfn2e"
+};
+
+/** 从 manifest.json 加载产物链接，失败时使用硬编码回退 */
+async function loadOutputs() {
+  if (DEMO_DATA.outputs) return;
+  try {
+    const res = await fetch("../../demo-assets/spacex/manifest.json");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const manifest = await res.json();
+    DEMO_DATA.outputs = {
+      summary: manifest.summary,
+      lecture: manifest.lecture,
+      mindmap: manifest.mindmap,
+      transcript: manifest.transcript,
+      docx: manifest.docx,
+      slides: manifest.slides,
+      feishu: manifest.feishuUrl
+    };
+  } catch (err) {
+    console.warn("manifest 加载失败，使用硬编码回退", err);
+    DEMO_DATA.outputs = FALLBACK_OUTPUTS;
+  }
+}
+
+const AgentChat = {
+  start() {
+    const el = document.getElementById("chat");
+    el.style.display = "block";
+    let i = 0;
+    const next = () => {
+      if (i >= DEMO_DATA.chatScript.length) return;
+      const msg = DEMO_DATA.chatScript[i++];
+      const div = document.createElement("div");
+      div.style.cssText = `margin-bottom:12px;display:flex;${msg.role === "agent" ? "justify-content:flex-end" : ""}`;
+      const bubble = document.createElement("div");
+      bubble.textContent = msg.text;
+      bubble.style.cssText = msg.role === "agent"
+        ? "background:#fff0f4;border:1px solid #FB7299;color:#18191C;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px"
+        : "background:#f4f5f7;border:1px solid #e3e5e7;color:#18191C;border-radius:12px 12px 12px 0;padding:10px 14px;max-width:80%;font-size:13px";
+      div.appendChild(bubble);
+      el.appendChild(div);
+      el.scrollTop = el.scrollHeight;
+      setTimeout(next, 1200);
+    };
+    next();
+  }
+};
+
+document.getElementById("startBtn").addEventListener("click", async () => {
+  const btn = document.getElementById("startBtn");
+  btn.disabled = true;
+  btn.textContent = "加载配置...";
+  await loadOutputs(); // 确保产物链接已加载再开始演示
+  btn.textContent = "运行中...";
+  AgentChat.start();
+  NodeFlow.render();
+  ConnectionLines.init();
+  let step = 0;
+  const run = () => {
+    if (step >= DEMO_DATA.nodeTimeline.length) {
+      btn.textContent = "已完成";
+      return;
+    }
+    if (step > 0) NodeFlow.complete(step - 1);
+    NodeFlow.activate(step);
+    if (step === 3) ConnectionLines.draw(3, 4, "transcript.json → 输入", "#00B894");
+    if (step === 8) {
+      ConnectionLines.draw(8, 9, "讲义.md → 输入", "#00B894");
+      setTimeout(() => OutputPanel.show(), 600);
+    }
+    step++;
+    setTimeout(run, 1300);
+  };
+  setTimeout(run, 800);
+});
+</script>
+
+<script>
+const NodeFlow = {
+  render() {
+    const el = document.getElementById("nodeFlow");
+    el.style.display = "block";
+    el.innerHTML = `
+      <div class="lab">Agent 执行流</div>
+      <div id="flowGrid" class="flow-grid">
+        <div class="flow-line" style="position:absolute;left:33.33%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
+        <div class="flow-line" style="position:absolute;left:66.66%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
+        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">🤖 AGENT 操作</div>
+        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">⚙️ 脚本执行</div>
+        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">📄 产出文件</div>
+        ${DEMO_DATA.nodeTimeline.map((step, idx) => this.renderStep(step, idx)).join("")}
+      </div>
+    `;
+  },
+  renderStep(step, idx) {
+    const color = step.kind === "agent" ? "#FB7299" : step.kind === "script" ? "#00AEEC" : "#00B894";
+    const bg = step.kind === "agent" ? "rgba(251,114,153,0.03)" : step.kind === "script" ? "rgba(0,174,236,0.03)" : "rgba(0,184,148,0.03)";
+    return `
+      <div id="step-${idx}" data-kind="${step.kind}" style="padding:12px;background:${bg};min-height:80px;display:flex;align-items:flex-start;justify-content:center">
+        <div class="node-card" style="background:#fff;border:1px solid #e8eaf1;border-radius:10px;padding:10px 12px;width:100%;opacity:0.35;transition:all 0.3s ease">
+          <div style="font-size:11px;font-weight:700;color:${color};margin-bottom:3px">${step.label}</div>
+          <div style="font-size:12px;color:#61666D">${step.detail}</div>
+          ${step.sub ? `<div style="font-size:11px;color:#9499A0;margin-top:3px">${step.sub}</div>` : ""}
+          ${step.progress ? `<div style="margin-top:8px;height:3px;background:#e0e3eb;border-radius:2px;overflow:hidden"><div class="progress" style="width:0%;height:100%;background:${color};transition:width 0.8s ease"></div></div>` : ""}
+        </div>
+      </div>
+    `;
+  },
+  activate(idx) {
+    const cell = document.getElementById(`step-${idx}`);
+    if (!cell) return;
+    const card = cell.querySelector(".node-card");
+    const kind = cell.dataset.kind;
+    const color = kind === "agent" ? "#FB7299" : kind === "script" ? "#00AEEC" : "#00B894";
+    card.style.opacity = "1";
+    card.style.border = `2px solid ${color}`;
+    card.style.boxShadow = `0 0 0 3px ${color}22`;
+    card.style.animation = "pulse 0.8s ease-in-out infinite alternate";
+    const progress = card.querySelector(".progress");
+    if (progress) {
+      setTimeout(() => progress.style.width = DEMO_DATA.nodeTimeline[idx].progress + "%", 50);
+    }
+  },
+  complete(idx) {
+    const cell = document.getElementById(`step-${idx}`);
+    if (!cell) return;
+    const card = cell.querySelector(".node-card");
+    card.style.animation = "none";
+    card.style.boxShadow = "none";
+  }
+};
+
+const style = document.createElement("style");
+style.textContent = `@keyframes pulse { from { transform: scale(1); } to { transform: scale(1.015); } }`;
+document.head.appendChild(style);
+</script>
+
+<script>
+const ConnectionLines = {
+  el: null,
+  init() {
+    const container = document.getElementById("nodeFlow");
+    this.el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    this.el.setAttribute("id", "connectionSvg");
+    this.el.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3";
+    container.style.position = "relative";
+    container.appendChild(this.el);
+  },
+  draw(fromIdx, toIdx, label, color) {
+    const container = document.getElementById("nodeFlow");
+    const grid = document.getElementById("flowGrid");
+    const from = document.getElementById(`step-${fromIdx}`);
+    const to = document.getElementById(`step-${toIdx}`);
+    if (!from || !to || !grid || !container) return;
+    const cr = container.getBoundingClientRect();
+    const fr = from.getBoundingClientRect();
+    const tr = to.getBoundingClientRect();
+    const x1 = fr.left + fr.width / 2 - cr.left;
+    const y1 = fr.top + fr.height / 2 - cr.top;
+    const x2 = tr.left + tr.width / 2 - cr.left;
+    const y2 = tr.top + tr.height / 2 - cr.top;
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2 - 20;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("d", `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`);
+    path.setAttribute("stroke", color);
+    path.setAttribute("stroke-width", "2");
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke-dasharray", "6,5");
+    path.innerHTML = `<animate attributeName="stroke-dashoffset" from="22" to="0" dur="1s" repeatCount="indefinite" />`;
+    this.el.appendChild(path);
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.setAttribute("x", cx);
+    text.setAttribute("y", cy);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", color);
+    text.setAttribute("font-size", "10");
+    text.setAttribute("font-weight", "700");
+    text.textContent = label;
+    this.el.appendChild(text);
+  },
+  clear() {
+    if (this.el) this.el.innerHTML = "";
+  }
+};
+</script>
+
+<script>
+const OutputPanel = {
+  async show() {
+    const el = document.getElementById("outputs");
+    el.style.display = "block";
+    const summaryText = await fetch(DEMO_DATA.outputs.summary).then(r => r.ok ? r.text() : "加载失败");
+    el.innerHTML = `
+      <div class="lab">产物展示</div>
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;margin-bottom:8px">1. 视频摘要</h3>
+        <div style="background:#fafbfc;border:1px solid #e8eaf1;border-radius:8px;padding:12px;max-height:200px;overflow:auto;font-size:13px;color:#61666D;white-space:pre-wrap">${summaryText.substring(0, 1200)}...</div>
+        <a href="${DEMO_DATA.outputs.summary}" target="_blank" style="font-size:12px;color:#00AEEC">查看完整 summary.md →</a>
+      </div>
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;margin-bottom:8px">2. 思维导图</h3>
+        <img src="${DEMO_DATA.outputs.mindmap}" style="max-width:100%;border:1px solid #e8eaf1;border-radius:8px" alt="mindmap">
+      </div>
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;margin-bottom:8px">3. 关键截图</h3>
+        <div class="slide-gallery-grid">
+          ${DEMO_DATA.outputs.slides.map(url => `<img src="${url}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide">`).join("")}
+        </div>
+      </div>
+      <div>
+        <h3 style="font-size:14px;margin-bottom:8px">4. 飞书云文档</h3>
+        <a href="${DEMO_DATA.outputs.feishu}" target="_blank" style="display:inline-block;background:#f0fbf6;border:1px solid #b9ead4;color:#00B894;padding:10px 16px;border-radius:8px;font-weight:600">打开飞书讲义 →</a>
+      </div>
+    `;
+  }
+};
+</script>
+
+</body>
+</html>

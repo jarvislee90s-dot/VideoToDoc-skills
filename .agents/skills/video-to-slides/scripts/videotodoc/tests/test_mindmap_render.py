@@ -68,3 +68,34 @@ def test_render_refreshes_markdown_and_docx(tmp_path: Path):
     assert "## 思维导图" in content
     assert "![思维导图]" in content
     assert len(refreshed) == 1
+
+
+def test_render_generates_missing_docx_for_compact_and_semantic(tmp_path: Path):
+    from videotodoc.mindmap import render_mindmap_and_refresh_docs
+
+    mmd = tmp_path / "mindmap.mmd"
+    mmd.write_text("mindmap\n  root((R))\n    A\n      a1\n", encoding="utf-8")
+
+    compact_md = tmp_path / "视频_讲义_紧凑版_20260101_120000.md"
+    compact_md.write_text("# 紧凑\n\n## 图文讲义\n", encoding="utf-8")
+    semantic_md = tmp_path / "视频_讲义_整理版_20260101_120000.md"
+    semantic_md.write_text("# 整理\n\n## 图文讲义\n", encoding="utf-8")
+    original_md = tmp_path / "视频_讲义_20260101_120000.md"
+    original_md.write_text("# 原始\n", encoding="utf-8")
+
+    generated_docxes: list[Path] = []
+
+    def fake_markdown_to_docx(md_path: Path, docx_path: Path) -> Path:
+        docx_path.write_bytes(b"fake docx")
+        generated_docxes.append(docx_path)
+        return docx_path
+
+    with patch("videotodoc.mindmap._run_mmdc", side_effect=_fake_mmdc_runner), \
+         patch("videotodoc.mindmap.markdown_to_docx", side_effect=fake_markdown_to_docx):
+        image_paths, refreshed = render_mindmap_and_refresh_docs(tmp_path)
+
+    assert len(image_paths) == 1
+    assert len(refreshed) == 2
+    assert any("视频_讲义_20260101_120000.docx" == p.name for p in refreshed)
+    assert any("视频_讲义_整理版_20260101_120000.docx" == p.name for p in refreshed)
+    assert not any("视频_讲义_紧凑版_" in p.name for p in refreshed)

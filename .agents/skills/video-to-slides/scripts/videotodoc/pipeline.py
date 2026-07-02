@@ -11,14 +11,11 @@ from .audio import extract_audio, probe_duration_ms
 from .config import Settings
 from .document import (
     ensure_semantic_markdown,
-    generate_mindmap,
-    markdown_to_docx,
     render_compact_markdown,
     render_original_markdown,
 )
 from .io import read_json, write_json
 from .models import ProcessResult, Section, Slide, SlideSet, to_plain_dict
-from .mindmap import render_mindmap_and_refresh_docs
 from .quality import write_quality_report
 from .slides import (
     cross_segment_dedupe,
@@ -283,62 +280,33 @@ def finalize_video(
     sync_offset_ms = settings.sync_offset_ms or 0
     sections = align_sections(slideset, transcript, sync_offset_ms)
 
-    # 生成产物
-    slug = confirmed.get("video_title", run_dir.stem)
+    # 生成产物（仅 Markdown，思维导图与 Word 在 Agent 整理后由 render_mindmap.py 生成）
+    # 优先使用 confirmed_segments.json 中的 video_title；若缺失则从 run_dir 名推断，
+    # 确保复用 video-summary 目录时产物名与 Markdown 标题一致
+    title = confirmed.get("video_title") or _title_from_run_dir(run_dir)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    markdown_path = run_dir / f"{slug}_讲义_{ts}.md"
-    compact_markdown_path = run_dir / f"{slug}_讲义_紧凑版_{ts}.md"
-    semantic_markdown_path = run_dir / f"{slug}_讲义_整理版_{ts}.md"
-    docx_path = run_dir / f"{slug}_讲义_{ts}.docx"
-    semantic_docx_path = run_dir / f"{slug}_讲义_整理版_{ts}.docx"
-    mindmap_path = run_dir / f"{slug}_思维导图_{ts}.mmd"
-    mindmap_image_path = run_dir / f"{slug}_思维导图_{ts}.png"
-
-    def _render_mindmap():
-        generate_mindmap(slug, sections, mindmap_path, settings)
-        if not mindmap_image_path.exists():
-            temp_mindmap = run_dir / "mindmap.mmd"
-            if not temp_mindmap.exists():
-                try:
-                    temp_mindmap.symlink_to(mindmap_path.name)
-                except OSError:
-                    shutil.copy2(mindmap_path, temp_mindmap)
-            image_paths, _ = render_mindmap_and_refresh_docs(run_dir, mindmap_path=mindmap_path, image_path=mindmap_image_path)
-            return image_paths
-        return [mindmap_image_path]
+    markdown_path = run_dir / f"{title}_讲义_{ts}.md"
+    compact_markdown_path = run_dir / f"{title}_讲义_紧凑版_{ts}.md"
+    semantic_markdown_path = run_dir / f"{title}_讲义_整理版_{ts}.md"
 
     def _render_original_md():
-        render_original_markdown(slug, sections, markdown_path)
+        render_original_markdown(title, sections, markdown_path)
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        f_mindmap = executor.submit(_render_mindmap)
+    with ThreadPoolExecutor(max_workers=1) as executor:
         f_orig_md = executor.submit(_render_original_md)
-        mm_images = f_mindmap.result()
         f_orig_md.result()
 
     def _render_compact_md():
-        render_compact_markdown(slug, sections, compact_markdown_path, mm_images)
+        render_compact_markdown(title, sections, compact_markdown_path, mindmap_image_path=None)
 
     def _render_semantic_md():
-        ensure_semantic_markdown(slug, sections, semantic_markdown_path, mm_images)
+        ensure_semantic_markdown(title, sections, semantic_markdown_path, mindmap_image_path=None)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         f_compact = executor.submit(_render_compact_md)
         f_semantic = executor.submit(_render_semantic_md)
         f_compact.result()
         f_semantic.result()
-
-    def _convert_compact_docx():
-        markdown_to_docx(compact_markdown_path, docx_path)
-
-    def _convert_semantic_docx():
-        markdown_to_docx(semantic_markdown_path, semantic_docx_path)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        f_docx1 = executor.submit(_convert_compact_docx)
-        f_docx2 = executor.submit(_convert_semantic_docx)
-        f_docx1.result()
-        f_docx2.result()
 
     return {
         "run_dir": str(run_dir.resolve()),
@@ -363,11 +331,11 @@ def process_video(
     else:
         title = None
 
-    # slug/ts 仍用于后续产物文件名
-    slug = slugify(title or video_path.stem)
+    # 外部 run_dir 复用时，产物文件名和 Markdown 标题使用原始标题；新建 run_dir 时仍用 slug 保证文件系统安全
+    file_title = title if run_dir is not None else slugify(title or video_path.stem)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     if run_dir is None:
-        run_dir = runs_dir / f"{slug}_{ts}"
+        run_dir = runs_dir / f"{slugify(title or video_path.stem)}_{ts}"
     cache_dir = run_dir / "cache"
     run_dir.mkdir(parents=True, exist_ok=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -387,15 +355,11 @@ def process_video(
     transcript_path = cache_dir / f"{video_hash}_{backend_slug}_{model_slug}.transcript.json"
     slides_path = cache_dir / f"{video_hash}_{slides_slug}.slides.json"
     sections_path = cache_dir / f"{video_hash}_{slides_slug}_{settings.sync_offset_ms or 'auto'}.sections.json"
-    # 产物命名：视频标题_讲义_时间戳
-    mindmap_path = run_dir / f"{slug}_思维导图_{ts}.mmd"
-    mindmap_image_path = run_dir / f"{slug}_思维导图_{ts}.png"
-    markdown_path = run_dir / f"{slug}_讲义_{ts}.md"
-    compact_markdown_path = run_dir / f"{slug}_讲义_紧凑版_{ts}.md"
-    semantic_markdown_path = run_dir / f"{slug}_讲义_整理版_{ts}.md"
-    docx_path = run_dir / f"{slug}_讲义_{ts}.docx"
-    semantic_docx_path = run_dir / f"{slug}_讲义_整理版_{ts}.docx"
-    quality_report_path = run_dir / f"{slug}_质量报告_{ts}.md"
+    # 产物命名：仅 Markdown，思维导图与 Word 在 Agent 整理后生成
+    markdown_path = run_dir / f"{file_title}_讲义_{ts}.md"
+    compact_markdown_path = run_dir / f"{file_title}_讲义_紧凑版_{ts}.md"
+    semantic_markdown_path = run_dir / f"{file_title}_讲义_整理版_{ts}.md"
+    quality_report_path = run_dir / f"{file_title}_质量报告_{ts}.md"
 
     # 步骤 1：提取音频
     audio = extract_audio(video_path, audio_path, settings, force=_stage_forced(force_rebuild, "audio"))
@@ -459,47 +423,33 @@ def process_video(
             },
         )
 
-    def _render_mindmap_pv():
-        generate_mindmap(video_path.stem, sections, mindmap_path, settings)
-        if not mindmap_image_path.exists() or _stage_forced(force_rebuild, "mindmap"):
-            temp_mindmap = run_dir / "mindmap.mmd"
-            if not temp_mindmap.exists():
-                try:
-                    temp_mindmap.symlink_to(mindmap_path.name)
-                except OSError:
-                    shutil.copy2(mindmap_path, temp_mindmap)
-            image_paths, _ = render_mindmap_and_refresh_docs(run_dir, mindmap_path=mindmap_path, image_path=mindmap_image_path)
-            return image_paths
-        return [mindmap_image_path]
-
     def _render_original_md_pv():
-        render_original_markdown(video_path.stem, sections, markdown_path)
+        # 统一使用 file_title（来自 run_dir 标题），避免 video_path.stem 导致标题变成 "video"
+        render_original_markdown(file_title, sections, markdown_path)
 
     def _write_quality_report_pv():
         write_quality_report(quality_report_path, transcript, slides, sections, sync_offset_ms)
 
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        f_mindmap_pv = executor.submit(_render_mindmap_pv)
+    with ThreadPoolExecutor(max_workers=2) as executor:
         f_orig_md_pv = executor.submit(_render_original_md_pv)
         f_quality_pv = executor.submit(_write_quality_report_pv)
-        mm_images = f_mindmap_pv.result()
         f_orig_md_pv.result()
         f_quality_pv.result()
 
     def _render_compact_md_pv():
         render_compact_markdown(
-            video_path.stem,
+            file_title,
             sections,
             compact_markdown_path,
-            mm_images,
+            mindmap_image_path=None,
         )
 
     def _render_semantic_md_pv():
         ensure_semantic_markdown(
-            video_path.stem,
+            file_title,
             sections,
             semantic_markdown_path,
-            mm_images,
+            mindmap_image_path=None,
         )
 
     with ThreadPoolExecutor(max_workers=2) as executor:
@@ -508,31 +458,19 @@ def process_video(
         f_compact_pv.result()
         f_semantic_pv.result()
 
-    def _convert_compact_docx_pv():
-        return markdown_to_docx(compact_markdown_path, docx_path)
-
-    def _convert_semantic_docx_pv():
-        return markdown_to_docx(semantic_markdown_path, semantic_docx_path)
-
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        f_docx1_pv = executor.submit(_convert_compact_docx_pv)
-        f_docx2_pv = executor.submit(_convert_semantic_docx_pv)
-        generated_docx = f_docx1_pv.result()
-        generated_semantic_docx = f_docx2_pv.result()
-
     return ProcessResult(
         run_dir=run_dir,
         transcript_path=transcript_path,
         slides_path=slides_path,
         sections_path=sections_path,
         markdown_path=markdown_path,
-        mindmap_path=mindmap_path,
+        mindmap_path=None,
         compact_markdown_path=compact_markdown_path,
         semantic_markdown_path=semantic_markdown_path,
-        mindmap_image_path=mm_images[0] if mm_images else None,
-        mindmap_image_paths=mm_images,
-        docx_path=generated_docx,
-        semantic_docx_path=generated_semantic_docx,
+        mindmap_image_path=None,
+        mindmap_image_paths=[],
+        docx_path=None,
+        semantic_docx_path=None,
         quality_report_path=quality_report_path,
     )
 
