@@ -28,13 +28,24 @@ body{font-family:var(--font);color:var(--text);background:linear-gradient(180deg
 input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-md);font-family:var(--mono);font-size:13px}
 .config-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--s-3)}
 .flow-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;position:relative;background:#fff;border:1px solid #e8eaf1;border-radius:12px;overflow:hidden}
+.flow-line{position:absolute;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1}
+.flow-header{text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc}
+.flow-col{display:flex;flex-direction:column;padding:12px 8px;gap:12px;position:relative;z-index:2}
+.flow-col.agent{background:rgba(251,114,153,0.03)}
+.flow-col.script{background:rgba(0,174,236,0.03);border-left:1.5px dashed #e0e3eb}
+.flow-col.output{background:rgba(0,184,148,0.03);border-left:1.5px dashed #e0e3eb}
+.flow-step{display:flex;align-items:flex-start;justify-content:center;min-height:80px}
 .slide-gallery-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.link-row{display:flex;align-items:center;gap:8px;margin-top:6px;font-size:12px;color:var(--blue)}
+.link-row a{color:var(--blue);text-decoration:none}
+.link-row a:hover{text-decoration:underline}
 @media (max-width:640px){
   .container{padding:var(--s-3)}
   .config-grid{grid-template-columns:1fr}
   .flow-grid{grid-template-columns:1fr;overflow-x:hidden}
-  .flow-grid > .flow-line{display:none}
-  .flow-grid > .flow-header{display:none}
+  .flow-line{display:none}
+  .flow-header{display:none}
+  .flow-col.script,.flow-col.output{border-left:none}
   .slide-gallery-grid{grid-template-columns:repeat(2,1fr)}
 }
 </style>
@@ -76,36 +87,47 @@ input[type=text]{width:100%;padding:10px 12px;border:1px solid var(--border);bor
 <script>
 const DEMO_DATA = {
   chatScript: [
-    {role: "user", text: "帮我整理这个 SpaceX 上市视频： https://www.youtube.com/watch?v=SpaceX..."},
-    {role: "agent", text: "收到。我将依次调用 video-summary、video-to-slides、feishu-markdown-publish 三个 Skill 完成处理。"},
-    {role: "agent", text: "首先读取 video-summary/SKILL.md，了解转录与摘要流程。"},
-    {role: "agent", text: "开始执行 process.py，下载视频并生成 transcript.json 与总结。"},
-    {role: "agent", text: "video-summary 完成。接下来读取 video-to-slides/SKILL.md。"},
-    {role: "agent", text: "正在截图、去重、图文对齐，生成讲义与思维导图。"},
-    {role: "agent", text: "video-to-slides 完成。最后读取 feishu-markdown-publish/SKILL.md。"},
-    {role: "agent", text: "已将讲义发布到飞书云文档，全部完成。"}
+    {role: "user", text: "帮我整理这个 SpaceX 上市视频： https://www.youtube.com/watch?v=SpaceX...", afterNode: -1},
+    {role: "agent", text: "收到。我将依次调用 video-summary、video-to-slides、feishu-markdown-publish 三个 Skill 完成处理。", afterNode: -1},
+    {role: "agent", text: "已读取 video-summary/SKILL.md，开始执行 process.py 下载视频并 ASR 转录。", afterNode: 0},
+    {role: "agent", text: "video-summary 完成：已生成 transcript.json 与视频摘要。", afterNode: 3},
+    {role: "agent", text: "已读取 video-to-slides/SKILL.md，开始截图、去重并与文字对齐。", afterNode: 4},
+    {role: "agent", text: "video-to-slides 完成：已生成讲义 Markdown、思维导图与 Word 文档。", afterNode: 8},
+    {role: "agent", text: "已读取 feishu-markdown-publish/SKILL.md，正在上传飞书云文档。", afterNode: 9},
+    {role: "agent", text: "已将讲义发布到飞书云文档，全部完成。", afterNode: 14}
   ],
   nodeTimeline: [
-    {kind: "agent", label: "读取 SKILL.md", detail: "video-summary/SKILL.md"},
-    {kind: "agent", label: "调用脚本", detail: "process.py --url ..."},
-    {kind: "script", label: "运行中", detail: "下载 → ASR → 摘要", progress: 65},
-    {kind: "output", label: "已生成", detail: "SpaceX_总结.md", sub: "transcript.json · video.mp4"},
-    {kind: "agent", label: "Agent 接收", detail: "摘要完成，准备截图对齐"},
-    {kind: "agent", label: "读取 SKILL.md", detail: "video-to-slides/SKILL.md"},
-    {kind: "agent", label: "调用脚本", detail: "process.py video.mp4 --transcript ..."},
-    {kind: "script", label: "运行中", detail: "截图 → 对齐 → 讲义", progress: 80},
-    {kind: "output", label: "已生成", detail: "SpaceX_讲义_整理版.md", sub: "思维导图.png · 56张截图 · .docx"},
-    {kind: "agent", label: "Agent 接收", detail: "讲义完成，准备发布"},
-    {kind: "agent", label: "读取 SKILL.md", detail: "feishu-publish/SKILL.md"},
-    {kind: "agent", label: "调用脚本", detail: "publish_markdown.py 讲义.md"},
-    {kind: "script", label: "运行中", detail: "上传飞书云文档", progress: 90},
-    {kind: "output", label: "已发布", detail: "飞书云文档链接", sub: "bcniplbzchv5.feishu.cn/docx/..."},
-    {kind: "agent", label: "全部完成", detail: "视频已转为图文讲义并发布到飞书"}
+    {kind: "agent", row: 0, label: "读取 SKILL.md", detail: "video-summary/SKILL.md"},
+    {kind: "agent", row: 1, label: "调用脚本", detail: "process.py --url ..."},
+    {kind: "script", row: 0, label: "运行中", detail: "下载 → ASR → 摘要", progress: 65},
+    {kind: "output", row: 0, label: "已生成", detail: "SpaceX_总结.md", sub: "transcript.json · video.mp4"},
+    {kind: "agent", row: 2, label: "Agent 接收", detail: "摘要完成，准备截图对齐"},
+    {kind: "agent", row: 3, label: "读取 SKILL.md", detail: "video-to-slides/SKILL.md"},
+    {kind: "agent", row: 4, label: "调用脚本", detail: "process.py video.mp4 --transcript ..."},
+    {kind: "script", row: 1, label: "运行中", detail: "截图 → 对齐 → 讲义", progress: 80},
+    {kind: "output", row: 1, label: "已生成", detail: "SpaceX_讲义_整理版.md", sub: "思维导图.png · 56张截图 · .docx"},
+    {kind: "agent", row: 5, label: "Agent 接收", detail: "讲义完成，准备发布"},
+    {kind: "agent", row: 6, label: "读取 SKILL.md", detail: "feishu-publish/SKILL.md"},
+    {kind: "agent", row: 7, label: "调用脚本", detail: "publish_markdown.py 讲义.md"},
+    {kind: "script", row: 2, label: "运行中", detail: "上传飞书云文档", progress: 90},
+    {kind: "output", row: 2, label: "已发布", detail: "飞书云文档链接", sub: "bcniplbzchv5.feishu.cn/docx/..."},
+    {kind: "agent", row: 8, label: "全部完成", detail: "视频已转为图文讲义并发布到飞书"}
   ],
-  outputs: null // 运行时从 manifest.json 加载，失败时回退到 FALLBACK_OUTPUTS
+  edges: [
+    {from: 1, to: 2, label: "调用"},
+    {from: 2, to: 3, label: "生成"},
+    {from: 3, to: 4, label: "输入"},
+    {from: 4, to: 5, label: "读取"},
+    {from: 6, to: 7, label: "调用"},
+    {from: 7, to: 8, label: "生成"},
+    {from: 8, to: 9, label: "输入"},
+    {from: 9, to: 10, label: "读取"},
+    {from: 11, to: 12, label: "调用"},
+    {from: 12, to: 13, label: "发布"}
+  ],
+  outputs: null
 };
 
-// 硬编码回退：当 file:// 打开或 manifest.json 不可用时使用
 const FALLBACK_OUTPUTS = {
   summary: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_总结_20260630_231231.md",
   lecture: "https://raw.githubusercontent.com/jarvislee90s-dot/VideoToDoc-skills/main/demo-assets/spacex/SpaceX上市，背后在玩什么资本游戏_讲义_整理版_20260630_232710.md",
@@ -125,7 +147,6 @@ const FALLBACK_OUTPUTS = {
   feishu: "https://bcniplbzchv5.feishu.cn/docx/VtMldBO8koF4xTxuOQlck9Zfn2e"
 };
 
-/** 从 manifest.json 加载产物链接，失败时使用硬编码回退 */
 async function loadOutputs() {
   if (DEMO_DATA.outputs) return;
   try {
@@ -148,26 +169,46 @@ async function loadOutputs() {
 }
 
 const AgentChat = {
+  queue: [],
+  nextIdx: 0,
+  reset() {
+    this.queue = [];
+    this.nextIdx = 0;
+  },
+  add(msg) {
+    this.queue.push(msg);
+    if (this.queue.length === 1) this._showNext();
+  },
+  trigger(afterNode) {
+    DEMO_DATA.chatScript.forEach((msg, idx) => {
+      if (msg.afterNode === afterNode && !msg._shown) {
+        msg._shown = true;
+        this.add({...msg, originalIdx: idx});
+      }
+    });
+  },
+  _showNext() {
+    if (this.nextIdx >= this.queue.length) return;
+    const msg = this.queue[this.nextIdx++];
+    const el = document.getElementById("chat");
+    const div = document.createElement("div");
+    div.style.cssText = `margin-bottom:12px;display:flex;${msg.role === "agent" ? "justify-content:flex-end" : ""}`;
+    const bubble = document.createElement("div");
+    bubble.textContent = msg.text;
+    bubble.style.cssText = msg.role === "agent"
+      ? "background:#fff0f4;border:1px solid #FB7299;color:#18191C;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px"
+      : "background:#f4f5f7;border:1px solid #e3e5e7;color:#18191C;border-radius:12px 12px 12px 0;padding:10px 14px;max-width:80%;font-size:13px";
+    div.appendChild(bubble);
+    el.appendChild(div);
+    el.scrollTop = el.scrollHeight;
+    setTimeout(() => this._showNext(), 900);
+  },
   start() {
     const el = document.getElementById("chat");
     el.style.display = "block";
-    let i = 0;
-    const next = () => {
-      if (i >= DEMO_DATA.chatScript.length) return;
-      const msg = DEMO_DATA.chatScript[i++];
-      const div = document.createElement("div");
-      div.style.cssText = `margin-bottom:12px;display:flex;${msg.role === "agent" ? "justify-content:flex-end" : ""}`;
-      const bubble = document.createElement("div");
-      bubble.textContent = msg.text;
-      bubble.style.cssText = msg.role === "agent"
-        ? "background:#fff0f4;border:1px solid #FB7299;color:#18191C;border-radius:12px 12px 0 12px;padding:10px 14px;max-width:80%;font-size:13px"
-        : "background:#f4f5f7;border:1px solid #e3e5e7;color:#18191C;border-radius:12px 12px 12px 0;padding:10px 14px;max-width:80%;font-size:13px";
-      div.appendChild(bubble);
-      el.appendChild(div);
-      el.scrollTop = el.scrollHeight;
-      setTimeout(next, 1200);
-    };
-    next();
+    this.reset();
+    DEMO_DATA.chatScript.forEach(m => m._shown = false);
+    this.trigger(-1);
   }
 };
 
@@ -175,28 +216,28 @@ document.getElementById("startBtn").addEventListener("click", async () => {
   const btn = document.getElementById("startBtn");
   btn.disabled = true;
   btn.textContent = "加载配置...";
-  await loadOutputs(); // 确保产物链接已加载再开始演示
+  await loadOutputs();
   btn.textContent = "运行中...";
   AgentChat.start();
   NodeFlow.render();
   ConnectionLines.init();
   let step = 0;
-  const run = () => {
+  const run = async () => {
     if (step >= DEMO_DATA.nodeTimeline.length) {
       btn.textContent = "已完成";
+      drawAllEdges();
+      await OutputPanel.show();
       return;
     }
-    if (step > 0) NodeFlow.complete(step - 1);
-    NodeFlow.activate(step);
-    if (step === 3) ConnectionLines.draw(3, 4, "transcript.json → 输入", "#00B894");
-    if (step === 8) {
-      ConnectionLines.draw(8, 9, "讲义.md → 输入", "#00B894");
-      setTimeout(() => OutputPanel.show(), 600);
+    if (step > 0) {
+      NodeFlow.complete(step - 1);
+      AgentChat.trigger(step - 1);
     }
+    NodeFlow.activate(step);
     step++;
-    setTimeout(run, 1300);
+    setTimeout(run, 1000);
   };
-  setTimeout(run, 800);
+  setTimeout(run, 400);
 });
 </script>
 
@@ -205,24 +246,33 @@ const NodeFlow = {
   render() {
     const el = document.getElementById("nodeFlow");
     el.style.display = "block";
+    const groups = {agent: [], script: [], output: []};
+    DEMO_DATA.nodeTimeline.forEach((step, idx) => {
+      groups[step.kind].push({step, idx});
+    });
+    const colClass = (kind) => kind === "agent" ? "agent" : kind === "script" ? "script" : "output";
+    const colTitle = (kind) => kind === "agent" ? "🤖 AGENT 操作" : kind === "script" ? "⚙️ 脚本执行" : "📄 产出文件";
+    const header = (kind) => `<div class="flow-header">${colTitle(kind)}</div>`;
+    const column = (kind, items) => `
+      <div class="flow-col ${colClass(kind)}">
+        ${items.map(({step, idx}) => this.renderStep(step, idx)).join("")}
+      </div>
+    `;
     el.innerHTML = `
       <div class="lab">Agent 执行流</div>
       <div id="flowGrid" class="flow-grid">
-        <div class="flow-line" style="position:absolute;left:33.33%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
-        <div class="flow-line" style="position:absolute;left:66.66%;top:0;bottom:0;border-left:1.5px dashed #e0e3eb;z-index:1"></div>
-        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">🤖 AGENT 操作</div>
-        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">⚙️ 脚本执行</div>
-        <div class="flow-header" style="text-align:center;padding:16px 8px;font-size:11px;font-weight:800;color:#7a8194;letter-spacing:1.5px;border-bottom:2px solid #f0f2f7;background:#fafbfc">📄 产出文件</div>
-        ${DEMO_DATA.nodeTimeline.map((step, idx) => this.renderStep(step, idx)).join("")}
+        <div class="flow-line" style="left:33.33%"></div>
+        <div class="flow-line" style="left:66.66%"></div>
+        ${header("agent")}${header("script")}${header("output")}
+        ${column("agent", groups.agent)}${column("script", groups.script)}${column("output", groups.output)}
       </div>
     `;
   },
   renderStep(step, idx) {
     const color = step.kind === "agent" ? "#FB7299" : step.kind === "script" ? "#00AEEC" : "#00B894";
-    const bg = step.kind === "agent" ? "rgba(251,114,153,0.03)" : step.kind === "script" ? "rgba(0,174,236,0.03)" : "rgba(0,184,148,0.03)";
     return `
-      <div id="step-${idx}" data-kind="${step.kind}" style="padding:12px;background:${bg};min-height:80px;display:flex;align-items:flex-start;justify-content:center">
-        <div class="node-card" style="background:#fff;border:1px solid #e8eaf1;border-radius:10px;padding:10px 12px;width:100%;opacity:0.35;transition:all 0.3s ease">
+      <div id="step-${idx}" data-kind="${step.kind}" data-row="${step.row}" class="flow-step">
+        <div class="node-card" style="background:#fff;border:1px solid #e8eaf1;border-radius:10px;padding:10px 12px;width:100%;opacity:0;transition:all 0.3s ease">
           <div style="font-size:11px;font-weight:700;color:${color};margin-bottom:3px">${step.label}</div>
           <div style="font-size:12px;color:#61666D">${step.detail}</div>
           ${step.sub ? `<div style="font-size:11px;color:#9499A0;margin-top:3px">${step.sub}</div>` : ""}
@@ -265,6 +315,8 @@ const ConnectionLines = {
   el: null,
   init() {
     const container = document.getElementById("nodeFlow");
+    if (!container) return;
+    this.clear();
     this.el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     this.el.setAttribute("id", "connectionSvg");
     this.el.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:3";
@@ -273,30 +325,78 @@ const ConnectionLines = {
   },
   draw(fromIdx, toIdx, label, color) {
     const container = document.getElementById("nodeFlow");
-    const grid = document.getElementById("flowGrid");
     const from = document.getElementById(`step-${fromIdx}`);
     const to = document.getElementById(`step-${toIdx}`);
-    if (!from || !to || !grid || !container) return;
+    if (!from || !to || !container || !this.el) return;
     const cr = container.getBoundingClientRect();
-    const fr = from.getBoundingClientRect();
-    const tr = to.getBoundingClientRect();
-    const x1 = fr.left + fr.width / 2 - cr.left;
-    const y1 = fr.top + fr.height / 2 - cr.top;
-    const x2 = tr.left + tr.width / 2 - cr.left;
-    const y2 = tr.top + tr.height / 2 - cr.top;
-    const cx = (x1 + x2) / 2;
-    const cy = (y1 + y2) / 2 - 20;
+    const fr = from.querySelector(".node-card").getBoundingClientRect();
+    const tr = to.querySelector(".node-card").getBoundingClientRect();
+
+    const fromKind = from.dataset.kind;
+    const toKind = to.dataset.kind;
+    const gap = 24;
+
+    let x1, y1, x2, y2, c1x, c2x;
+    if (fromKind === "agent" && toKind === "script") {
+      x1 = fr.right - cr.left;
+      y1 = fr.top + fr.height / 2 - cr.top;
+      x2 = tr.left - cr.left;
+      y2 = tr.top + tr.height / 2 - cr.top;
+      c1x = x1 + gap;
+      c2x = x2 - gap;
+    } else if (fromKind === "script" && toKind === "output") {
+      x1 = fr.right - cr.left;
+      y1 = fr.top + fr.height / 2 - cr.top;
+      x2 = tr.left - cr.left;
+      y2 = tr.top + tr.height / 2 - cr.top;
+      c1x = x1 + gap;
+      c2x = x2 - gap;
+    } else if (fromKind === "output" && toKind === "agent") {
+      x1 = fr.left + fr.width / 2 - cr.left;
+      y1 = fr.bottom - cr.top;
+      x2 = tr.left + tr.width / 2 - cr.left;
+      y2 = tr.top - cr.top;
+      c1x = x1;
+      c2x = x2;
+    } else if (fromKind === "agent" && toKind === "agent") {
+      x1 = fr.right - cr.left;
+      y1 = fr.top + fr.height / 2 - cr.top;
+      x2 = tr.left - cr.left;
+      y2 = tr.top + tr.height / 2 - cr.top;
+      c1x = x1 + gap;
+      c2x = x2 - gap;
+    } else {
+      x1 = fr.left + fr.width / 2 - cr.left;
+      y1 = fr.top + fr.height / 2 - cr.top;
+      x2 = tr.left + tr.width / 2 - cr.left;
+      y2 = tr.top + tr.height / 2 - cr.top;
+      c1x = (x1 + x2) / 2;
+      c2x = c1x;
+    }
+
+    const c1y = y1;
+    const c2y = y2;
+
     const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-    path.setAttribute("d", `M ${x1},${y1} Q ${cx},${cy} ${x2},${y2}`);
+    path.setAttribute("d", `M ${x1},${y1} C ${c1x},${c1y} ${c2x},${c2y} ${x2},${y2}`);
     path.setAttribute("stroke", color);
     path.setAttribute("stroke-width", "2");
     path.setAttribute("fill", "none");
     path.setAttribute("stroke-dasharray", "6,5");
-    path.innerHTML = `<animate attributeName="stroke-dashoffset" from="22" to="0" dur="1s" repeatCount="indefinite" />`;
+    const animate = document.createElementNS("http://www.w3.org/2000/svg", "animate");
+    animate.setAttribute("attributeName", "stroke-dashoffset");
+    animate.setAttribute("from", "22");
+    animate.setAttribute("to", "0");
+    animate.setAttribute("dur", "1s");
+    animate.setAttribute("repeatCount", "indefinite");
+    path.appendChild(animate);
     this.el.appendChild(path);
+
+    const mx = (x1 + x2) / 2;
+    const my = (y1 + y2) / 2;
     const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
-    text.setAttribute("x", cx);
-    text.setAttribute("y", cy);
+    text.setAttribute("x", mx);
+    text.setAttribute("y", my - 5);
     text.setAttribute("text-anchor", "middle");
     text.setAttribute("fill", color);
     text.setAttribute("font-size", "10");
@@ -305,37 +405,64 @@ const ConnectionLines = {
     this.el.appendChild(text);
   },
   clear() {
-    if (this.el) this.el.innerHTML = "";
+    const old = document.getElementById("connectionSvg");
+    if (old) old.remove();
+    this.el = null;
   }
 };
+
+function drawAllEdges() {
+  ConnectionLines.clear();
+  ConnectionLines.init();
+  DEMO_DATA.edges.forEach((edge, i) => {
+    setTimeout(() => {
+      ConnectionLines.draw(edge.from, edge.to, edge.label, "#00B894");
+    }, i * 120);
+  });
+}
 </script>
 
 <script>
 const OutputPanel = {
+  escapeHtml(text) {
+    return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+  },
   async show() {
     const el = document.getElementById("outputs");
     el.style.display = "block";
-    const summaryText = await fetch(DEMO_DATA.outputs.summary).then(r => r.ok ? r.text() : "加载失败");
+    const out = DEMO_DATA.outputs || FALLBACK_OUTPUTS;
+    const summaryText = await fetch(out.summary)
+      .then(r => r.ok ? r.text() : "加载失败")
+      .catch(() => "加载失败");
     el.innerHTML = `
       <div class="lab">产物展示</div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">1. 视频摘要</h3>
-        <div style="background:#fafbfc;border:1px solid #e8eaf1;border-radius:8px;padding:12px;max-height:200px;overflow:auto;font-size:13px;color:#61666D;white-space:pre-wrap">${summaryText.substring(0, 1200)}...</div>
-        <a href="${DEMO_DATA.outputs.summary}" target="_blank" style="font-size:12px;color:#00AEEC">查看完整 summary.md →</a>
+        <div style="background:#fafbfc;border:1px solid #e8eaf1;border-radius:8px;padding:12px;max-height:200px;overflow:auto;font-size:13px;color:#61666D;white-space:pre-wrap">${this.escapeHtml(summaryText.substring(0, 1200))}...</div>
+        <div class="link-row"><a href="${out.summary}" target="_blank">查看完整 summary.md →</a></div>
       </div>
       <div style="margin-bottom:24px">
-        <h3 style="font-size:14px;margin-bottom:8px">2. 思维导图</h3>
-        <img src="${DEMO_DATA.outputs.mindmap}" style="max-width:100%;border:1px solid #e8eaf1;border-radius:8px" alt="mindmap">
+        <h3 style="font-size:14px;margin-bottom:8px">2. 讲义 Markdown</h3>
+        <div class="link-row"><a href="${out.lecture}" target="_blank">打开讲义_整理版.md →</a></div>
       </div>
       <div style="margin-bottom:24px">
-        <h3 style="font-size:14px;margin-bottom:8px">3. 关键截图</h3>
+        <h3 style="font-size:14px;margin-bottom:8px">3. 思维导图</h3>
+        <a href="${out.mindmap}" target="_blank"><img src="${out.mindmap}" style="max-width:100%;border:1px solid #e8eaf1;border-radius:8px" alt="mindmap"></a>
+      </div>
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;margin-bottom:8px">4. 关键截图</h3>
         <div class="slide-gallery-grid">
-          ${DEMO_DATA.outputs.slides.map(url => `<img src="${url}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide">`).join("")}
+          ${out.slides.map(url => `<a href="${url}" target="_blank"><img src="${url}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide"></a>`).join("")}
         </div>
       </div>
+      <div style="margin-bottom:24px">
+        <h3 style="font-size:14px;margin-bottom:8px">5. 原始数据与文档</h3>
+        <div class="link-row"><a href="${out.transcript}" target="_blank">transcript.json →</a></div>
+        <div class="link-row"><a href="${out.docx}" target="_blank">下载讲义.docx →</a></div>
+      </div>
       <div>
-        <h3 style="font-size:14px;margin-bottom:8px">4. 飞书云文档</h3>
-        <a href="${DEMO_DATA.outputs.feishu}" target="_blank" style="display:inline-block;background:#f0fbf6;border:1px solid #b9ead4;color:#00B894;padding:10px 16px;border-radius:8px;font-weight:600">打开飞书讲义 →</a>
+        <h3 style="font-size:14px;margin-bottom:8px">6. 飞书云文档</h3>
+        <a href="${out.feishu}" target="_blank" style="display:inline-block;background:#f0fbf6;border:1px solid #b9ead4;color:#00B894;padding:10px 16px;border-radius:8px;font-weight:600">打开飞书讲义 →</a>
       </div>
     `;
   }
