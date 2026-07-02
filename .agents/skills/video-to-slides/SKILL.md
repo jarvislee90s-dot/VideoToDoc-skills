@@ -39,7 +39,7 @@ capture → review-segments(agent 介入) → finalize（仅 Markdown） → ren
 - 无候选图的段在段中点补一帧
 - merge 段时间范围自动扩展到目标段
 - 跨段边界去重（仅相邻段）
-- 生成 Markdown/Word/思维导图
+- 生成 Markdown（Word 与思维导图在 Agent 整理后由 render_mindmap.py 生成）
 
 ---
 
