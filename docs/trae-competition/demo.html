@@ -223,15 +223,15 @@ document.getElementById("startBtn").addEventListener("click", async () => {
   ConnectionLines.init();
   let step = 0;
   const run = async () => {
+    if (step > 0) {
+      NodeFlow.complete(step - 1);
+      AgentChat.trigger(step - 1);
+    }
     if (step >= DEMO_DATA.nodeTimeline.length) {
       btn.textContent = "已完成";
       drawAllEdges();
       await OutputPanel.show();
       return;
-    }
-    if (step > 0) {
-      NodeFlow.complete(step - 1);
-      AgentChat.trigger(step - 1);
     }
     NodeFlow.activate(step);
     step++;
@@ -337,7 +337,15 @@ const ConnectionLines = {
     const gap = 24;
 
     let x1, y1, x2, y2, c1x, c2x;
-    if (fromKind === "agent" && toKind === "script") {
+    if (fromKind === toKind) {
+      // 同一列内的节点（如 Agent→Agent）使用纵向贝塞尔曲线，避免折返穿过列内卡片
+      x1 = fr.left + fr.width / 2 - cr.left;
+      y1 = fr.bottom - cr.top;
+      x2 = tr.left + tr.width / 2 - cr.left;
+      y2 = tr.top - cr.top;
+      c1x = x1;
+      c2x = x2;
+    } else if (fromKind === "agent" && toKind === "script") {
       x1 = fr.right - cr.left;
       y1 = fr.top + fr.height / 2 - cr.top;
       x2 = tr.left - cr.left;
@@ -358,13 +366,6 @@ const ConnectionLines = {
       y2 = tr.top - cr.top;
       c1x = x1;
       c2x = x2;
-    } else if (fromKind === "agent" && toKind === "agent") {
-      x1 = fr.right - cr.left;
-      y1 = fr.top + fr.height / 2 - cr.top;
-      x2 = tr.left - cr.left;
-      y2 = tr.top + tr.height / 2 - cr.top;
-      c1x = x1 + gap;
-      c2x = x2 - gap;
     } else {
       x1 = fr.left + fr.width / 2 - cr.left;
       y1 = fr.top + fr.height / 2 - cr.top;
@@ -427,42 +428,55 @@ const OutputPanel = {
   escapeHtml(text) {
     return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
   },
+  validateUrl(url) {
+    try {
+      const u = new URL(url);
+      return u.protocol === "http:" || u.protocol === "https:";
+    } catch (e) {
+      return false;
+    }
+  },
+  safeUrl(url) {
+    return this.validateUrl(url) ? this.escapeHtml(url) : "#";
+  },
   async show() {
     const el = document.getElementById("outputs");
     el.style.display = "block";
     const out = DEMO_DATA.outputs || FALLBACK_OUTPUTS;
-    const summaryText = await fetch(out.summary)
+    const summaryRaw = await fetch(out.summary)
       .then(r => r.ok ? r.text() : "加载失败")
       .catch(() => "加载失败");
+    const isTruncated = summaryRaw.length > 1200;
+    const summaryDisplay = this.escapeHtml(isTruncated ? summaryRaw.substring(0, 1200) : summaryRaw) + (isTruncated ? "..." : "");
     el.innerHTML = `
       <div class="lab">产物展示</div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">1. 视频摘要</h3>
-        <div style="background:#fafbfc;border:1px solid #e8eaf1;border-radius:8px;padding:12px;max-height:200px;overflow:auto;font-size:13px;color:#61666D;white-space:pre-wrap">${this.escapeHtml(summaryText.substring(0, 1200))}...</div>
-        <div class="link-row"><a href="${out.summary}" target="_blank">查看完整 summary.md →</a></div>
+        <div style="background:#fafbfc;border:1px solid #e8eaf1;border-radius:8px;padding:12px;max-height:200px;overflow:auto;font-size:13px;color:#61666D;white-space:pre-wrap">${summaryDisplay}</div>
+        <div class="link-row"><a href="${this.safeUrl(out.summary)}" target="_blank">查看完整 summary.md →</a></div>
       </div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">2. 讲义 Markdown</h3>
-        <div class="link-row"><a href="${out.lecture}" target="_blank">打开讲义_整理版.md →</a></div>
+        <div class="link-row"><a href="${this.safeUrl(out.lecture)}" target="_blank">打开讲义_整理版.md →</a></div>
       </div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">3. 思维导图</h3>
-        <a href="${out.mindmap}" target="_blank"><img src="${out.mindmap}" style="max-width:100%;border:1px solid #e8eaf1;border-radius:8px" alt="mindmap"></a>
+        <a href="${this.safeUrl(out.mindmap)}" target="_blank"><img src="${this.safeUrl(out.mindmap)}" style="max-width:100%;border:1px solid #e8eaf1;border-radius:8px" alt="mindmap"></a>
       </div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">4. 关键截图</h3>
         <div class="slide-gallery-grid">
-          ${out.slides.map(url => `<a href="${url}" target="_blank"><img src="${url}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide"></a>`).join("")}
+          ${out.slides.map(url => `<a href="${this.safeUrl(url)}" target="_blank"><img src="${this.safeUrl(url)}" style="width:100%;border:1px solid #e8eaf1;border-radius:6px" alt="slide"></a>`).join("")}
         </div>
       </div>
       <div style="margin-bottom:24px">
         <h3 style="font-size:14px;margin-bottom:8px">5. 原始数据与文档</h3>
-        <div class="link-row"><a href="${out.transcript}" target="_blank">transcript.json →</a></div>
-        <div class="link-row"><a href="${out.docx}" target="_blank">下载讲义.docx →</a></div>
+        <div class="link-row"><a href="${this.safeUrl(out.transcript)}" target="_blank">transcript.json →</a></div>
+        <div class="link-row"><a href="${this.safeUrl(out.docx)}" target="_blank">下载讲义.docx →</a></div>
       </div>
       <div>
         <h3 style="font-size:14px;margin-bottom:8px">6. 飞书云文档</h3>
-        <a href="${out.feishu}" target="_blank" style="display:inline-block;background:#f0fbf6;border:1px solid #b9ead4;color:#00B894;padding:10px 16px;border-radius:8px;font-weight:600">打开飞书讲义 →</a>
+        <a href="${this.safeUrl(out.feishu)}" target="_blank" style="display:inline-block;background:#f0fbf6;border:1px solid #b9ead4;color:#00B894;padding:10px 16px;border-radius:8px;font-weight:600">打开飞书讲义 →</a>
       </div>
     `;
   }

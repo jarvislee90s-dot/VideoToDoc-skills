@@ -7,7 +7,7 @@
 - 移动视口：iPhone 14 Pro（393 × 852）
 - 本地服务：`python3 -m http.server 8765`（`docs/trae-competition`）
 - 测试页面：`http://localhost:8765/demo.html`
-- 验证时间：2026-07-02
+- 验证时间：2026-07-01
 
 ## 截图评价
 
