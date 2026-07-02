@@ -171,13 +171,18 @@ async function loadOutputs() {
 const AgentChat = {
   queue: [],
   nextIdx: 0,
+  timer: null,
   reset() {
     this.queue = [];
     this.nextIdx = 0;
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
   },
   add(msg) {
     this.queue.push(msg);
-    if (this.queue.length === 1) this._showNext();
+    if (!this.timer) this._startTimer();
   },
   trigger(afterNode) {
     DEMO_DATA.chatScript.forEach((msg, idx) => {
@@ -186,6 +191,10 @@ const AgentChat = {
         this.add({...msg, originalIdx: idx});
       }
     });
+  },
+  _startTimer() {
+    if (this.timer) return;
+    this.timer = setInterval(() => this._showNext(), 900);
   },
   _showNext() {
     if (this.nextIdx >= this.queue.length) return;
@@ -201,11 +210,11 @@ const AgentChat = {
     div.appendChild(bubble);
     el.appendChild(div);
     el.scrollTop = el.scrollHeight;
-    setTimeout(() => this._showNext(), 900);
   },
   start() {
     const el = document.getElementById("chat");
     el.style.display = "block";
+    el.innerHTML = "";
     this.reset();
     DEMO_DATA.chatScript.forEach(m => m._shown = false);
     this.trigger(-1);
