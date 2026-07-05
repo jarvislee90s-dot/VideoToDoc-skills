@@ -220,10 +220,16 @@ def finalize_video(
     matched_candidates = _find_matching_cache_file(candidates_files, video_path, "候选图")
     candidates = slides_from_dict(read_json(matched_candidates))
 
-    # 找 transcript 缓存（按 video_hash 匹配）
-    transcript_files = list(cache_dir.glob("*.transcript.json"))
-    matched_transcript = _find_matching_cache_file(transcript_files, video_path, "转录")
-    transcript = _transcript_from_external(read_json(matched_transcript), settings.language)
+    # 优先用阶段 0 产出的 review-passed merged（agent 已在阶段 0 末尾跑过 check_review_report.py）
+    run_dir_merged = run_dir / "transcript_merged.json"
+    if run_dir_merged.exists():
+        transcript = _transcript_from_external(read_json(run_dir_merged), settings.language)
+        print(f"  ♻️  finalize 使用 review-passed merged：{run_dir_merged.name}")
+    else:
+        # 找 transcript 缓存（按 video_hash 匹配）
+        transcript_files = list(cache_dir.glob("*.transcript.json"))
+        matched_transcript = _find_matching_cache_file(transcript_files, video_path, "转录")
+        transcript = _transcript_from_external(read_json(matched_transcript), settings.language)
 
     # 按 confirmed 分段处理
     fill_dir = run_dir / "fill_slides"
