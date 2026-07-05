@@ -131,48 +131,28 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 所以你整理长句时个别字误差不会报错；只有 index 漏号/跳号/重复才报错，
 且报错精确到具体分组，只需修正出错分组重写文件重跑。
 
-### 6.6 Review Agent 复核合并质量
+### 6.6 Review Agent 复核合并质量（**必做，不可跳过**）
 
-**背景**：整理 agent 第一次合并可能忽略句法依存或字数约束。由另一个独立上下文的 review agent 检查 `merged_groups.json`，输出 `merge_review_report.json`，整理 agent 根据报告局部修正。review agent 不直接修改 `merged_groups.json`，只输出意见；分段决策权始终在 agent。
+> ⚠️ **警告**：本步骤**必须**独立 subagent 跑一次，**不跑不许进入下一步**（摘要 / video-to-slides / feishu 发布）。
 
 **步骤**：
-1. 整理 agent 完成首次合并后，运行客观检查脚本生成初步报告：
-    ```bash
-    python3 .agents/skills/video-summary/scripts/review_merge.py \
-      runs/<run_dir>/transcript.json runs/<run_dir>/merged_groups.json
-    ```
-2. review agent 读取：
-   - `runs/<run_dir>/merge_input.json`（原始短句 + suggestion 约束）
-   - `runs/<run_dir>/merged_groups.json`（整理 agent 输出）
-   - `runs/<run_dir>/merge_review_report.json`（客观检查初步结果）
-3. review agent 按以下清单复核，输出增强版 `merge_review_report.json`：
-   - **句法完整性**：相邻段边界是否把补语/数据/宾语拆散；
-   - **同话题聚合**：同一话题是否被不必要地切到两段；
-   - **短句数**：每段是否尽量落在 `per_group_range` 内；
-   - **字数**：每段是否尽量落在 `chars_per_group_range` 内；
-   - **原始短句索引**：是否连续覆盖、无跳号。
-4. review report 格式示例：
-   ```json
-   {
-     "total_groups": 69,
-     "issues": [
-       {
-         "group_index": 6,
-         "type": "syntax_break",
-         "severity": "critical",
-         "description": "第6段结尾'价格基本都暴涨了'与第7段开头'300%到500%'是依存关系，应并入同一段",
-         "suggested_fix": "整理 agent 将 index 83 并入第7段，或将 index 84-86 并入第6段"
-       }
-     ],
-     "pass": false
-   }
-   ```
+
+1. 整理 agent 完成首次合并 → `merged_groups.json`
+2. 跑 `apply_merge.py` 校验索引连续 → `transcript_merged.json`
+3. 跑 `review_merge.py` 客观检查 → 初步 `merge_review_report.json`
+4. **【必做】派独立 subagent 复核**：使用 `reference/review_agent_prompt.md` 中的 prompt 模板
+5. subagent 读 `merge_input.json` + `merged_groups.json` + `merge_review_report.json`，输出增强版 `merge_review_report.json`
+6. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
+7. 重跑 `apply_merge.py` + `review_merge.py` + subagent 复核，直到 `pass=true`
+8. **直到 pass 才进下一步**
 
 **review agent 规则**：
 - 只输出报告，不直接修改 `merged_groups.json`。
 - critical 问题必须标记；warning 问题允许整理 agent 酌情处理。
 - 所有判断必须基于 `merge_input.json` 中的约束数据，不能自行放宽。
 - 遇到超出 `chars_per_group_range` 或 `per_group_range` 的段，先判断是否为“同话题完整”导致；若是，可接受为 warning；若不是，应建议切分。
+
+**Prompt 模板**：见 `reference/review_agent_prompt.md`（独立文件，agent 调起 subagent 时加载）。
 
 ### 6.7 整理 agent 根据 Review Report 修正
 
