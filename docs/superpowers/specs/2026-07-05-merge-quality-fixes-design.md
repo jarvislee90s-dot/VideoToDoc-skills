@@ -6,10 +6,12 @@
 
 ## 1. 背景
 
-视频整理流程 `video-summary` + `video-to-slides` 跑下来发现两个 bug：
+视频整理流程 `video-summary` + `video-to-slides` 跑下来发现两个 bug，外加整体审视发现**两类流程问题**：
 
 - **Bug 1**：`restore_images.py` 默认 `sync_toc` 会把紧凑版 `## 图文讲义` 和首个 `### 第 N 页` 之间的所有内容当 TOC 抓取，覆盖 agent 写在整理版的目录。同时由于 sync_toc 误把"第 1 页全部内容"插入为子目录，整理版最终文件里第 1 页出现两次（占位版+整理版）。
 - **Bug 2**：整理 agent 跳过了 SKILL 文档 6.6 节要求的"独立 review agent"步骤。`review_merge.py` 客观脚本只检测"数字/程度补语"被切（如"暴涨 300%"），不检测"主谓/状语"被切（如"让每个词"+"都包含 X"），导致图文讲义出现断句。
+- **流程问题 A**：video-to-slides 阶段 3 收尾让 agent 跑两次命令（`restore_images.py` + `render_mindmap.py`），而这是**纯脚本串行 + 无 agent 介入**的环节。按"串行脚本 + 无 agent 介入 → wrapper"原则，应包装成一个统一入口。
+- **流程问题 B**：video-summary 6.6 节把 review agent 的 prompt 模板**内联在 SKILL.md** 里（~80 行），与"脚本生成的产物"（merged_groups.json 等）混在一起，agent 容易只盯脚本产物而忽略 prompt 上下文。按"脚本生成的内容 vs Review Agent 上下文提示"隔离原则，prompt 模板应独立成 `reference/review_agent_prompt.md`。
 
 ## 2. 根因
 
@@ -46,12 +48,37 @@ video-to-slides 阶段 1 脚本生成**紧凑版和整理版都有 `## 图文讲
   - "主谓/状语"被切需要 LLM 理解语义才能识别，客观脚本做不到
 - commit `2e8e564d fix(video-summary): 降低 review_merge 句法断裂启发式误报率` 之前有过误报，已经把"是/了/到/为"等高频虚词从启发式中移除——说明这条启发式已经调到合理水位，**不要再加新启发式**
 
+### 2.4 流程问题 A 根因：video-to-slides 阶段 3 收尾没 wrapper
+
+当前 SKILL.md ⑥⑧⑨⑩ 步：
+- ⑥ 步"重要"段说："改写完成后，运行 `restore_images.py`"
+- ⑧ ⑨ 步重复描述 `restore_images.py` + `render_mindmap.py`
+- ⑩ 步说："运行两个命令"
+
+**问题**：
+- ⑥ 步和 ⑩ 步**重复让 agent 跑 restore_images.py**（agent 会被引导跑两次）
+- ⑧ ⑨ 步是**纯脚本串行**（无 agent 介入），但被分两步骤让 agent 跑
+- 按"串行脚本 + 无 agent 介入 → wrapper"原则，应该用统一入口
+
+### 2.5 流程问题 B 根因：review agent prompt 模板与 SKILL 混在一起
+
+当前 SKILL.md 6.6 节内联完整 prompt 模板（~80 行），agent 读 SKILL.md 时：
+- 流程说明（"必做" + 7 步）
+- 完整 prompt 模板
+- review agent 规则
+
+三种内容混在一起。Agent 可能只盯 prompt 模板而忽略流程，或反之。按"脚本生成的内容 vs Review Agent 上下文提示"应**隔离**：
+- 流程说明 → SKILL.md
+- Prompt 模板 → `reference/review_agent_prompt.md`
+
 ## 3. 设计目标
 
 1. **Bug 1**：删除 `restore_images.py` 的目录同步功能（`sync_toc` + `extract_toc_from_compact`），让脚本只做"图片恢复"这一件事；目录由 agent 在 ⑤ ⑥ 步自己写/复制
 2. **强化 SKILL.md ⑤ ⑥ 步**：明确"Agent 在 ⑤ 步把目录写到紧凑版"+"Agent 在 ⑥ 步把目录复制到整理版"，标"必做"
-3. **Bug 2**：在 `SKILL.md` 6.6 节强化 review agent 流程，明确"必做，不可跳过"，内联完整提示词模板
-4. **不动**：`review_merge.py`、`process.py`、`cli.py`、`document.py` 等其他脚本
+3. **流程问题 A**：新增 `finalize.py` wrapper，把 `restore_images.py` + `render_mindmap.py` 包装成统一入口
+4. **Bug 2**：在 `SKILL.md` 6.6 节强化 review agent 流程，明确"必做，不可跳过"
+5. **流程问题 B**：review agent prompt 模板独立成 `reference/review_agent_prompt.md`，SKILL.md 6.6 节精简到只说"必做"+ 7 步 + 引用 reference
+6. **不动**：`review_merge.py`、`process.py`、`cli.py`、`document.py` 等其他脚本
 
 ## 4. 改动清单
 
@@ -86,16 +113,30 @@ video-to-slides 阶段 1 脚本生成**紧凑版和整理版都有 `## 图文讲
 - 任务列表加一项"**从紧凑版复制目录到整理版**"（在改写文字之前）
 - 删除"`restore_images.py` 默认会把紧凑版中 ## 图文讲义 与第一个 ### 第 N 页 之间的目录同步到整理版"这句话
 - 删除"`--no-sync-toc`"标志的说明（脚本已删）
+- 删除"重要"段中"运行脚本恢复图片并同步目录"的命令（已合并到 finalize.py，见 4.4）
 - 明确"⑥ 步做完后整理版应有 `## 图文讲义` + 目录 + `---` + 各页"
 
-### 4.4 `video-summary/SKILL.md` 6.6 节：重写
+### 4.4 `video-to-slides/SKILL.md` 阶段 3 收尾：改用 finalize.py wrapper
 
-新 6.6 节内容包含：
-- **强制流程**说明（最严厉语气）
-- **为什么强制**说明（区分客观脚本和 LLM 复核的分工）
-- **完整步骤**（7 步）
-- **review agent 提示词模板**（内联完整内容）
-- **review agent 规则**（只输出报告、不直接修改等）
+当前 ⑧ ⑨ ⑩ 步（line 241-271）让 agent 跑两次命令。改写为：
+- ⑧ ⑨ 步：删（不再单独描述）
+- ⑩ 步：只写"运行 `python3 finalize.py <run_dir>`"
+- `finalize.py` 内部自动调 `restore_images.py` + `render_mindmap.py`
+
+### 4.5 `video-summary/SKILL.md` 6.6 节：精简 + 引用 reference
+
+当前 6.6 节（line 134-178）内联完整 prompt 模板（~80 行）+ "为什么强制"段。改写为：
+- 删"为什么强制"段（按用户原则"让下面的步骤做就行了"）
+- 精简到 ~15 行：只说"必做"+ 7 步 + "prompt 模板在 `reference/review_agent_prompt.md`"
+- 保留"review agent 规则"（critical/warning 解释）
+
+### 4.6 新增 `video-summary/reference/review_agent_prompt.md`
+
+完整 review agent prompt 模板独立成文件。内容见 5.8 节。
+
+### 4.7 新增 `video-to-slides/scripts/finalize.py`
+
+wrapper 脚本，包装 `restore_images.py` + `render_mindmap.py`。内容见 5.6 节。
 
 ## 5. 具体内容
 
@@ -105,7 +146,7 @@ video-to-slides 阶段 1 脚本生成**紧凑版和整理版都有 `## 图文讲
 def main() -> int:
     args = sys.argv[1:]
     if len(args) < 2:
-        print("用法：python3 restore_images.py <compact_md> <semantic_md>", file=sys.stderr)
+        print('用法：python3 restore_images.py <compact_md> <semantic_md>', file=sys.stderr)
         return 1
 
     compact_path = Path(args[0]).expanduser().resolve()
@@ -115,7 +156,7 @@ def main() -> int:
         restore_images(compact_path, semantic_path)
         return 0
     except FileNotFoundError as e:
-        print(f"❌ 错误：{e}", file=sys.stderr)
+        print(f'❌ 错误：{e}', file=sys.stderr)
         return 2
 ```
 
@@ -123,11 +164,11 @@ def main() -> int:
 
 ```python
 def restore_images(compact_path: Path, semantic_path: Path) -> Path:
-    """用紧凑版的图片路径替换整理版中的占位符。"""
+    '''用紧凑版的图片路径替换整理版中的占位符。'''
     if not semantic_path.exists():
-        raise FileNotFoundError(f"整理版不存在：{semantic_path}")
+        raise FileNotFoundError(f'整理版不存在：{semantic_path}')
     if not compact_path.exists():
-        raise FileNotFoundError(f"紧凑版不存在：{compact_path}")
+        raise FileNotFoundError(f'紧凑版不存在：{compact_path}')
 
     images = extract_images_from_compact(compact_path)
     # ... 后续图片替换逻辑不变
@@ -147,7 +188,7 @@ def restore_images(compact_path: Path, semantic_path: Path) -> Path:
 2. 在 `## 图文讲义` 标题之后、`### 第 1 页` 之前插入目录
 
 **输出格式**：
-```markdown
+\`\`\`markdown
 ## 图文讲义
 
 - **第一章 章节名称**（00:00 - 05:30）：简短概述
@@ -156,12 +197,13 @@ def restore_images(compact_path: Path, semantic_path: Path) -> Path:
 ---
 
 ### 第 1 页 · 00:00 - 00:30
-```
+\`\`\`
 
 **要求**：
 - 章节划分依据语义转折，不是按页数均分
 - 时间范围精确到秒
 - **必须**包含至少 3 个章节项；少于 3 个说明章节切分太粗
+```
 
 ### 5.4 `video-to-slides/SKILL.md` ⑥ 步新内容
 
@@ -187,45 +229,139 @@ def restore_images(compact_path: Path, semantic_path: Path) -> Path:
 4. 将口语化表达改写为书面语
 5. 保留页码和时间信息
 
-**输出**：改写后的 `<视频标题>_讲义_整理版_<时间戳>.md`，**应有 `## 图文讲义` 标题 + 完整目录 + `---` + 各页整理后文字 + 图片占位符（已被 `restore_images.py` 替换为实际图片）**
+**输出**：改写后的 `<视频标题>_讲义_整理版_<时间戳>.md`，**应有 `## 图文讲义` 标题 + 完整目录 + `---` + 各页整理后文字 + 图片占位符**
 
-**重要**：改写完成后，运行脚本恢复图片（**不做**目录同步，目录已在任务 1 复制）：
-```bash
-python3 scripts/restore_images.py \
-  "<视频标题>_讲义_紧凑版_<时间戳>.md" \
-  "<视频标题>_讲义_整理版_<时间戳>.md"
-```
+> ⑥ 步做完后，**不要**单独跑 `restore_images.py`——阶段 3 收尾由 `finalize.py` wrapper 统一处理（见 ⑩ 步）。
 ```
 
-### 5.5 `video-summary/SKILL.md` 6.6 节新内容
+### 5.5 `video-to-slides/SKILL.md` 阶段 3 收尾新内容
+
+```markdown
+## 阶段 3：脚本自动收尾
+
+> **Agent 注意**：以下步骤由 `finalize.py` **统一脚本**完成，你不需要分别跑多个命令。
+
+### ⑩ 收尾：图片恢复 + 思维导图 + Word
+
+- 运行 `python3 .agents/skills/video-to-slides/scripts/finalize.py <run_dir>`：
+  - 自动恢复图片（`restore_images.py`）
+  - 自动渲染思维导图（`render_mindmap.py`）
+  - 自动生成/刷新紧凑版、整理版两份 Word
+- 当节点过多或单图尺寸过大时，自动按章节拆分 `mindmap_01.png`、`mindmap_02.png`... 并同步插入 Markdown/Word
+- **此步骤是 agent 唯一需要手动运行的脚本命令**（除 `process.py` 阶段 1 入口外）
+```
+
+### 5.6 `finalize.py` 设计
+
+**路径**：`agents/skills/video-to-slides/scripts/finalize.py`
+
+**核心逻辑**：
+
+```python
+#!/usr/bin/env python3
+"""video-to-slides 阶段 3 收尾 wrapper。
+
+统一执行图片恢复 + 思维导图渲染 + Word 生成。
+Agent 不需要分别跑 restore_images.py 和 render_mindmap.py。
+
+用法：
+    python3 finalize.py <run_dir>
+"""
+from __future__ import annotations
+import subprocess
+import sys
+from pathlib import Path
+
+
+def find_files(run_dir: Path) -> tuple[Path, Path]:
+    """在 run_dir 找紧凑版和整理版（agent 写完后路径已确定）。"""
+    compact_candidates = list(run_dir.glob('*_讲义_紧凑版_*.md'))
+    semantic_candidates = list(run_dir.glob('*_讲义_整理版_*.md'))
+    if not compact_candidates:
+        raise FileNotFoundError(f'run_dir 下找不到紧凑版：{run_dir}')
+    if not semantic_candidates:
+        raise FileNotFoundError(f'run_dir 下找不到整理版：{run_dir}')
+    return compact_candidates[0], semantic_candidates[0]
+
+
+def run_restore_images(compact_md: Path, semantic_md: Path, project_root: Path) -> None:
+    '''调 restore_images.py 恢复图片。'''
+    script = project_root / '.agents' / 'skills' / 'video-to-slides' / 'scripts' / 'restore_images.py'
+    subprocess.run(['python3', str(script), str(compact_md), str(semantic_md)], check=True)
+
+
+def run_render_mindmap(run_dir: Path, project_root: Path) -> None:
+    '''调 render_mindmap.py 渲染思维导图 + 生成 word。'''
+    script = project_root / '.agents' / 'skills' / 'video-to-slides' / 'scripts' / 'render_mindmap.py'
+    subprocess.run(['python3', str(script), str(run_dir)], check=True)
+
+
+def main() -> int:
+    if len(sys.argv) < 2:
+        print('用法：python3 finalize.py <run_dir>', file=sys.stderr)
+        return 1
+    run_dir = Path(sys.argv[1]).expanduser().resolve()
+    if not run_dir.is_dir():
+        print(f'❌ run_dir 不存在：{run_dir}', file=sys.stderr)
+        return 2
+    project_root = Path(__file__).resolve().parents[3]  # 假设 scripts/finalize.py 在 video-to-slides 下
+
+    compact_md, semantic_md = find_files(run_dir)
+    print(f'▶ 恢复图片：{compact_md.name} → {semantic_md.name}')
+    run_restore_images(compact_md, semantic_md, project_root)
+    print('▶ 渲染思维导图 + 生成 Word')
+    run_render_mindmap(run_dir, project_root)
+    print(f'✅ 收尾完成：{run_dir}')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
+```
+
+**关键点**：
+- 找 run_dir 下的 `*_讲义_紧凑版_*.md` 和 `*_讲义_整理版_*.md`（glob 匹配，避免硬编码文件名）
+- 用 `subprocess.run` 调两个脚本，`check=True` 失败抛错
+- project_root 自动推断（`Path(__file__).resolve().parents[3]`）
+- 输出进度提示（"▶ ... ✅ ..."）
+
+### 5.7 `video-summary/SKILL.md` 6.6 节新内容（精简版）
 
 ```markdown
 ### 6.6 Review Agent 复核合并质量（**必做，不可跳过**）
 
 > ⚠️ **警告**：本步骤**必须**独立 subagent 跑一次，**不跑不许进入下一步**（摘要 / video-to-slides / feishu 发布）。
 
-**为什么强制**：
-- `review_merge.py` 客观脚本**只检测数字/程度补语**被切（如"暴涨 300%"），**不检测"主谓/状语"被切**（如"让每个词"+"都包含 X"）
-- 后者需要 LLM 理解语义才能识别，客观脚本做不到
-- 跳过这一步会导致图文讲义断句（每张图之间出现半句话）
-- 客观脚本报的 0 critical **不能**代替 review agent 复核
-
 **步骤**：
 
 1. 整理 agent 完成首次合并 → `merged_groups.json`
 2. 跑 `apply_merge.py` 校验索引连续 → `transcript_merged.json`
 3. 跑 `review_merge.py` 客观检查 → 初步 `merge_review_report.json`
-4. **【必做】派独立 subagent 复核**（按下面的"review agent 提示词模板"）：
-   - subagent 读 `merge_input.json` + `merged_groups.json` + `merge_review_report.json`
-   - 按 5 项清单复核（句法完整性、同话题聚合、字数、段大小、索引）
-   - 输出**增强版** `merge_review_report.json`（覆盖原文件）
-5. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
-6. 重跑 `apply_merge.py` + `review_merge.py` + subagent 复核，直到 `pass=true` 或只剩可接受 warning
-7. **直到 pass 才进下一步**
+4. **【必做】派独立 subagent 复核**：使用 `reference/review_agent_prompt.md` 中的 prompt 模板
+5. subagent 读 `merge_input.json` + `merged_groups.json` + `merge_review_report.json`，输出增强版 `merge_review_report.json`
+6. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
+7. 重跑 `apply_merge.py` + `review_merge.py` + subagent 复核，直到 `pass=true`
+8. **直到 pass 才进下一步**
 
-#### review agent 提示词模板（**必用，不可改写核心规则**）
+**review agent 规则**：
+- 只输出报告，不直接修改 `merged_groups.json`。
+- critical 问题必须标记；warning 问题允许整理 agent 酌情处理。
+- 所有判断必须基于 `merge_input.json` 中的约束数据，不能自行放宽。
+- 遇到超出 `chars_per_group_range` 或 `per_group_range` 的段，先判断是否为"同话题完整"导致；若是，可接受为 warning；若不是，应建议切分。
 
+**Prompt 模板**：见 `reference/review_agent_prompt.md`（独立文件，agent 调起 subagent 时加载）。
 ```
+
+### 5.8 `video-summary/reference/review_agent_prompt.md` 完整内容
+
+```markdown
+# review agent 提示词模板
+
+**用途**：video-summary 步骤 6 的 review agent subagent prompt。
+**加载方式**：agent 调起 subagent 时，把本文件内容作为 system prompt 传入。
+
+---
+
 你是 video-summary 的独立 review agent（和整理 agent 不同的 context）。
 你的任务：复核整理 agent 的合并结果，只输出报告，不直接修改文件。
 
@@ -261,7 +397,8 @@ python3 scripts/restore_images.py \
 ## 输出
 
 **覆盖写** `<run_dir>/merge_review_report.json`，结构：
-```json
+
+\`\`\`json
 {
   "total_groups": 38,
   "issues": [
@@ -275,20 +412,13 @@ python3 scripts/restore_images.py \
   ],
   "pass": false
 }
-```
+\`\`\`
 
 ## 硬规则
 - **只输出报告，不直接修改 merged_groups.json**
 - 严重性只有 `critical` / `warning` 两级
 - `pass` 在所有 issues 都是可接受 warning 时为 true，有 critical 时为 false
 - 不要放宽或跳过清单任何一项
-```
-
-**review agent 规则**（保留原内容）：
-- 只输出报告，不直接修改 `merged_groups.json`。
-- critical 问题必须标记；warning 问题允许整理 agent 酌情处理。
-- 所有判断必须基于 `merge_input.json` 中的约束数据，不能自行放宽。
-- 遇到超出 `chars_per_group_range` 或 `per_group_range` 的段，先判断是否为"同话题完整"导致；若是，可接受为 warning；若不是，应建议切分。
 ```
 
 ## 6. 测试用例
@@ -298,11 +428,11 @@ python3 scripts/restore_images.py \
 - **输入**：
   - 紧凑版（`## 图文讲义` + 完整目录 + `---` + 各页）
   - 整理版（agent 已写好 `## 图文讲义` + 自己的目录 + 各页整理文字）
-- **跑**：`python3 restore_images.py <compact_md> <semantic_md>`
+- **跑**：`python3 finalize.py <run_dir>`（wrapper 内部调 restore_images.py）
 - **期望**：
   - 整理版 H1 后到第一个 `### 第 N 页` 之间的内容（agent 写的目录）**完全保持不变**
   - 每张图的占位符 `<!-- IMAGE:N -->` 被替换为实际图片路径
-- **验证方法**：diff 跑前跑后的整理版，差异只在图片行（`<!-- IMAGE:N -->` → `![第 N 页](path)`）
+- **验证方法**：diff 跑前跑后的整理版，差异只在图片行
 
 ### 6.2 ⑤ ⑥ 步流程验证
 
@@ -310,58 +440,80 @@ python3 scripts/restore_images.py \
   1. 阶段 1：脚本生成紧凑版和整理版（都无目录）
   2. ⑤ 步：Agent 在紧凑版 `## 图文讲义` 后插入目录
   3. ⑥ 步：Agent 从紧凑版复制目录到整理版 + 改写文字
-  4. ⑧ 步：脚本只恢复图片
+  4. ⑩ 步：跑 `finalize.py`（只跑一次）
 - **期望**：
   - 整理版**有** `## 图文讲义` + agent 写的目录 + `---` + 各页整理后文字 + 实际图片
   - 整理版**没有** `restore_images.py` 误生成的"第 1 页重复"
+  - Agent 只在阶段 1 跑 `process.py`、在 ⑩ 步跑 `finalize.py`（两个命令）
 
-### 6.3 Bug 2 流程验证
+### 6.3 阶段 3 收尾 wrapper 验证
+
+- **跑**：`python3 finalize.py <run_dir>`
+- **内部自动执行**：
+  - 调 `restore_images.py <compact_md> <semantic_md>` → 恢复图片
+  - 调 `render_mindmap.py <run_dir>` → 渲染 mindmap + 生成 word
+- **期望**：
+  - 整理版的 `<!-- IMAGE:N -->` 被替换为实际图片
+  - `mindmap.png` 出现在 run_dir
+  - `*.docx` 文件被生成/刷新
+  - Agent 只需要跑**一次**命令
+
+### 6.4 Bug 2 流程验证
 
 - **流程**：
   1. 整理 agent 合并 → `merged_groups.json`
   2. 跑 `review_merge.py` → 客观 `merge_review_report.json`（含/不含 critical）
-  3. 派 subagent 复核 → 增强版 `merge_review_report.json`
-  4. 整理 agent 根据 critical 局部修正 `merged_groups.json`
-  5. 重跑 `apply_merge.py` + `review_merge.py` + subagent 直到 `pass=true`
-  6. 才进下一步
+  3. 调起 subagent，加载 `reference/review_agent_prompt.md` 作为 system prompt
+  4. subagent 读 `merge_input.json` + `merged_groups.json` + `merge_review_report.json`，输出增强版 report
+  5. 整理 agent 根据 critical 局部修正 `merged_groups.json`
+  6. 重跑 `apply_merge.py` + `review_merge.py` + subagent 直到 `pass=true`
+  7. 才进下一步
 - **期望**：整理版图文讲义**没有跨页断句**（如"让每个词"和"都包含 X" 在同一页）
 
 ## 7. 风险与回滚
 
 - **风险**：
   - 删除 `sync_toc` 后，原本"自动同步紧凑版目录到整理版"的功能消失——但这正是修复目标（改为 Agent 复制）
-  - SKILL.md 5 ⑥ 6.6 节加入"必做"流程后，agent 不能跳过——这是修复目标
-  - Agent 在 ⑥ 步必须记得"先复制目录再改写文字"——靠文档纪律保证
+  - 新增 `finalize.py` 后，agent 流程变化（少跑一次命令）——SKILL.md ⑥⑩ 步会更新
+  - `review_agent_prompt.md` 独立后，agent 调起 subagent 时需要知道去 reference 加载——SKILL.md 6.6 节明确写"加载 reference"
 - **回滚**：
-  - 改动范围小（1 个 Python 文件 + 2 个 SKILL 文档）
+  - 改动范围小（1 个 Python 文件删除 + 1 个 Python 文件新增 + 1 个 reference 新增 + 2 个 SKILL 文档改写）
   - `git revert` 即可回滚
 - **向后兼容**：
   - 删掉 `--no-sync-toc` 标志后，旧命令行（带 `--no-sync-toc`）会被忽略（argparse 行为），不影响功能
-  - 实际现有用户没有依赖 `sync_toc`（前面跑 A 目录时也没传过 `--no-sync-toc`）
+  - 现有用户没有依赖 `sync_toc`（前面跑 A 目录时也没传过 `--no-sync-toc`）
 
 ## 8. 不做（YAGNI）
 
 - **不动 `review_merge.py`**：用户明确说不要通过脚本拦截，且现有启发式已调到合理水位
 - **不动 `process.py` / `cli.py` / `document.py`**：本次修复不需要
-- **不**为 `sync_toc` 加新功能（如"自动跳过已写目录"）——直接删，符合 YAGNI
-- **不**改 review agent 提示词的核心规则——保持简洁，不增加维护成本
-- **不**做"agent 写目录"专用工具——agent 自己有写 markdown 能力，工具不该替 agent 决策
+- **不**为 `sync_toc` 加新功能——直接删，符合 YAGNI
+- **不**改 review agent 提示词的核心规则——保持简洁
+- **不**做"agent 写目录"专用工具——agent 自己有写 markdown 能力
+- **不**为 review agent wrapper 加 LLM API 集成或 Skill 封装——纯文档方案已经够用
+- **不**为 `finalize.py` 加新功能（如支持多视频）——只做"调两个脚本 + 找文件路径"
 
 ## 9. 验收标准
 
-- 修复后跑一次 `video-summary` + `video-to-slides` 流程：
-  - **整理版有 `## 图文讲义` 标题 + agent 写的目录 + `---` + 各页**（验证 Bug 1 修复）
-  - **整理版没有 sync_toc 误生成的"第 1 页重复"**（验证 Bug 1 修复）
-  - **整理 agent 强制跑 review agent subagent**（验证 Bug 2 流程）
-  - **整理版图文讲义没有跨页断句**（验证 Bug 2 效果）
+修复后跑一次 `video-summary` + `video-to-slides` 流程：
+- **整理版有 `## 图文讲义` 标题 + agent 写的目录 + `---` + 各页**（验证 Bug 1 修复）
+- **整理版没有 sync_toc 误生成的"第 1 页重复"**（验证 Bug 1 修复）
+- **agent 阶段 1 跑 process.py、阶段 3 跑 finalize.py**（验证流程问题 A 修复）
+- **整理 agent 强制跑 review agent subagent**（验证 Bug 2 流程）
+- **review agent 加载 `reference/review_agent_prompt.md` 作为 system prompt**（验证流程问题 B 修复）
+- **整理版图文讲义没有跨页断句**（验证 Bug 2 效果）
 
 ## 10. 改动汇总
 
 | 文件 | 改动量 | 风险 |
 |---|---|---|
-| `.agents/skills/video-to-slides/scripts/restore_images.py` | 删除 ~60 行 | 低（删除而非修改） |
-| `.agents/skills/video-to-slides/SKILL.md` ⑤ 步 | 改写 +10 行 | 低（文档级） |
-| `.agents/skills/video-to-slides/SKILL.md` ⑥ 步 | 改写 +15 行 | 低（文档级） |
-| `.agents/skills/video-summary/SKILL.md` 6.6 节 | 重写 +90 行 | 低（文档级） |
+| `agents/skills/video-to-slides/scripts/restore_images.py` | 删除 ~60 行 | 低（删除而非修改） |
+| `agents/skills/video-to-slides/scripts/finalize.py` | 新增 ~70 行 | 低（新增 wrapper，调用现成脚本） |
+| `agents/skills/video-to-slides/SKILL.md` ⑤ 步 | 改写 +10 行 | 低（文档级） |
+| `agents/skills/video-to-slides/SKILL.md` ⑥ 步 | 改写 +15 行 | 低（文档级） |
+| `agents/skills/video-to-slides/SKILL.md` 阶段 3 收尾 | ⑧⑨ 删 + ⑩ 重写 +5 行 | 低（文档级） |
+| `agents/skills/video-summary/SKILL.md` 6.6 节 | 重写 -60/+15 行 | 低（文档级） |
+| `agents/skills/video-summary/reference/review_agent_prompt.md` | 新增 ~80 行 | 低（新增独立文件） |
 
-总共：1 个 Python 文件删除 ~60 行，2 个 SKILL 文档加 +115 行。
+总共：1 个 Python 文件删除 ~60 行，1 个 Python 文件新增 ~70 行，1 个 reference 新增 ~80 行，2 个 SKILL 文档调整。
+
