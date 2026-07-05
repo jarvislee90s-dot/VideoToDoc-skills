@@ -20,6 +20,9 @@ assert_contains(r"### 6\.6 Review Agent.*\*\*必做，不可跳过\*\*", "6.6 �
 # 6.6 节不应有"为什么强制"段
 assert_not_contains(r"## 为什么强制", "6.6 节'为什么强制'段")
 
+# 6.6 节不应再内联旧版复核清单（句法完整性等应移到 reference）
+assert_not_contains(r"相邻段边界是否把补语/数据/宾语拆散", "旧 6.6 内联清单")
+
 # 6.6 节应引用 reference/review_agent_prompt.md
 assert_contains(r"reference/review_agent_prompt\.md", "6.6 节引用 reference")
 

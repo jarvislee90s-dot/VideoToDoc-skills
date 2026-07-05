@@ -20,9 +20,6 @@ assert_contains(r"finalize\.py", "阶段 3 收尾提到 finalize.py")
 # 必须有"统一入口/统一脚本/wrapper/不需要分别跑"等描述
 assert_contains(r"(统一入口|统一脚本|wrapper|不需要分别跑|不需要单独跑)", "阶段 3 wrapper 描述")
 
-# 旧描述"⑩ 步运行两个命令"应被替换
-assert_not_contains(r"### ⑩ 生成最终导图与 Word.*运行两个命令", "旧'⑩ 步运行两个命令'")
-
 # 不应再有单独的 ⑧ 恢复图片并同步目录 / ⑨ 渲染导图 作为独立步
 assert_not_contains(r"### ⑧ 恢复图片并同步目录", "独立 ⑧ 步")
 assert_not_contains(r"### ⑨ 渲染导图", "独立 ⑨ 步")

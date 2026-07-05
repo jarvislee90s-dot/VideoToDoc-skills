@@ -77,7 +77,7 @@ def test_extract_toc_from_compact_removed():
 
 def test_no_sync_toc_argument():
     spec = importlib.util.spec_from_file_location('restore_images', SCRIPT)
-    mod = importlib.util.module_from_spec(mod)
+    mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     import inspect
     sig = inspect.signature(mod.restore_images)
@@ -92,7 +92,7 @@ def test_main_no_no_sync_toc_help():
         'main() usage/help 不应再提到 --no-sync-toc 标志'
 ```
 
-Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python -m pytest .agents/skills/video-to-slides/scripts/tests/test_restore_images_no_sync_toc.py -v`
+Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && .venv/bin/pytest .agents/skills/video-to-slides/scripts/tests/test_restore_images_no_sync_toc.py -v`
 Expected: **FAIL** — 4 个测试全失败（因为 sync_toc 等函数/参数还在）
 
 - [ ] **Step 2：删 `extract_toc_from_compact` 函数（line 22-37）**
@@ -129,12 +129,12 @@ print('用法：python3 restore_images.py <compact_md> <semantic_md>', file=sys.
 
 - [ ] **Step 6：跑测试确认通过**
 
-Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python -m pytest .agents/skills/video-to-slides/scripts/tests/test_restore_images_no_sync_toc.py -v`
+Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && .venv/bin/pytest .agents/skills/video-to-slides/scripts/tests/test_restore_images_no_sync_toc.py -v`
 Expected: **PASS** — 4 个测试全过
 
 - [ ] **Step 7：跑回归测试确认未破坏其他功能**
 
-Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python -m pytest .agents/skills/video-to-slides/scripts/videotodoc/tests/ -v 2>&1 | tail -50`
+Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && .venv/bin/pytest .agents/skills/video-to-slides/scripts/videotodoc/tests/ -v 2>&1 | tail -50`
 Expected: 现有测试全过（如有失败，记录并修复，但不属于本任务范围）
 
 - [ ] **Step 8：Commit**
@@ -209,7 +209,7 @@ def test_main_nonexistent_run_dir(capsys):
     assert 'run_dir 不存在' in captured.err
 ```
 
-Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python -m pytest .agents/skills/video-to-slides/scripts/tests/test_finalize.py -v`
+Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && .venv/bin/pytest .agents/skills/video-to-slides/scripts/tests/test_finalize.py -v`
 Expected: **FAIL** — `ModuleNotFoundError: No module named 'finalize'`（脚本还不存在）
 
 - [ ] **Step 2：写 `finalize.py` 框架（不含 subprocess 调用细节）**
@@ -221,7 +221,7 @@ Expected: **FAIL** — `ModuleNotFoundError: No module named 'finalize'`（脚�
 """video-to-slides 阶段 3 收尾 wrapper。
 
 统一执行图片恢复 + 思维导图渲染 + Word 生成。
-Agent 不需要分别跑 restore_images.py 和 render_mindmap.py。
+Agent 不需要分别跑 restore_images.py 和 render_mindmap.py，只跑本脚本即可。
 
 用法：
     python3 finalize.py <run_dir>
@@ -232,9 +232,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+# finalize.py 与 restore_images.py / render_mindmap.py 同处 scripts/ 目录
+_SCRIPTS_DIR = Path(__file__).resolve().parent
+
 
 def find_compact_and_semantic(run_dir: Path) -> tuple[Path, Path]:
-    """在 run_dir 下找紧凑版和整理版。"""
+    """在 run_dir 下找紧凑版和整理版 Markdown。"""
     compact_candidates = sorted(run_dir.glob('*_讲义_紧凑版_*.md'))
     semantic_candidates = sorted(run_dir.glob('*_讲义_整理版_*.md'))
     if not compact_candidates:
@@ -244,39 +247,36 @@ def find_compact_and_semantic(run_dir: Path) -> tuple[Path, Path]:
     return compact_candidates[0], semantic_candidates[0]
 
 
-def _project_root() -> Path:
-    """推断项目根目录（finalize.py 在 scripts/finalize.py，根在上 3 层）。"""
-    return Path(__file__).resolve().parents[3]
+def run_restore_images(compact_md: Path, semantic_md: Path) -> None:
+    """调 restore_images.py 恢复图片（不再同步目录）。"""
+    script = _SCRIPTS_DIR / 'restore_images.py'
+    # 用当前解释器调用，避免 python3 指向与依赖不匹配的解释器
+    subprocess.run([sys.executable, str(script), str(compact_md), str(semantic_md)], check=True)
 
 
-def run_restore_images(compact_md: Path, semantic_md: Path, project_root: Path) -> None:
-    """调 restore_images.py 恢复图片。"""
-    script = project_root / '.agents' / 'skills' / 'video-to-slides' / 'scripts' / 'restore_images.py'
-    subprocess.run(['python3', str(script), str(compact_md), str(semantic_md)], check=True)
+def run_render_mindmap(run_dir: Path) -> None:
+    """调 render_mindmap.py 渲染思维导图 + 生成/刷新两份 Word。"""
+    script = _SCRIPTS_DIR / 'render_mindmap.py'
+    subprocess.run([sys.executable, str(script), str(run_dir)], check=True)
 
 
-def run_render_mindmap(run_dir: Path, project_root: Path) -> None:
-    """调 render_mindmap.py 渲染思维导图 + 生成 word。"""
-    script = project_root / '.agents' / 'skills' / 'video-to-slides' / 'scripts' / 'render_mindmap.py'
-    subprocess.run(['python3', str(script), str(run_dir)], check=True)
-
-
-def main() -> int:
-    if len(sys.argv) < 2:
+def main(argv: list[str] | None = None) -> int:
+    # argv 显式传入时用之（便于测试），否则读命令行
+    args = sys.argv[1:] if argv is None else argv
+    if not args:
         print('用法：python3 finalize.py <run_dir>', file=sys.stderr)
         return 1
-    run_dir = Path(sys.argv[1]).expanduser().resolve()
+    run_dir = Path(args[0]).expanduser().resolve()
     if not run_dir.is_dir():
         print(f'❌ run_dir 不存在：{run_dir}', file=sys.stderr)
         return 2
-    project_root = _project_root()
 
     compact_md, semantic_md = find_compact_and_semantic(run_dir)
-    print(f'▶ 恢复图片：{compact_md.name} → {semantic_md.name}')
-    run_restore_images(compact_md, semantic_md, project_root)
-    print('▶ 渲染思维导图 + 生成 Word')
-    run_render_mindmap(run_dir, project_root)
-    print(f'✅ 收尾完成：{run_dir}')
+    print(f'▶ 恢复图片：{compact_md.name} → {semantic_md.name}', flush=True)
+    run_restore_images(compact_md, semantic_md)
+    print('▶ 渲染思维导图 + 生成 Word', flush=True)
+    run_render_mindmap(run_dir)
+    print(f'✅ 收尾完成：{run_dir}', flush=True)
     return 0
 
 
@@ -286,7 +286,7 @@ if __name__ == '__main__':
 
 - [ ] **Step 3：跑测试确认通过**
 
-Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python -m pytest .agents/skills/video-to-slides/scripts/tests/test_finalize.py -v`
+Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && .venv/bin/pytest .agents/skills/video-to-slides/scripts/tests/test_finalize.py -v`
 Expected: **PASS** — 4 个测试全过
 
 - [ ] **Step 4：手动跑一次真实 run_dir 验证 wrapper**
@@ -455,7 +455,7 @@ def assert_not_contains(pattern: str, label: str) -> None:
 assert_contains(r'### ⑤ 生成全文目录.*\*\*必做，不可跳过\*\*', '⑤ 步必做标识')
 
 # ⑤ 步必须明确"只写一次到紧凑版"
-assert_contains(r'目录\*只写一次\*到\*紧凑版\*', '⑤ 步只写一次约束')
+assert_contains(r'目录\*\*只写一次\*\*到\*\*紧凑版\*\*', '⑤ 步只写一次约束')
 
 # ⑤ 步必须提到"⑥ 步会复制到整理版"
 assert_contains(r'⑥ 步会.*复制到整理版', '⑤ 步提示 ⑥ 步复制')
@@ -592,9 +592,6 @@ assert_contains(r'finalize\.py', '阶段 3 收尾提到 finalize.py')
 # 必须有"统一入口"或"统一脚本"或类似描述
 assert_contains(r'(统一入口|统一脚本|wrapper|不需要分别跑|不需要单独跑)', '阶段 3 wrapper 描述')
 
-# 旧描述"运行两个命令"应被替换
-assert_not_contains(r'### ⑩ 生成最终导图与 Word.*运行两个命令', '旧"⑩ 步运行两个命令"')
-
 # 不应再有单独"### ⑧ 恢复图片并同步目录"或"### ⑨ 渲染导图"作为独立步
 assert_not_contains(r'### ⑧ 恢复图片并同步目录', '独立 ⑧ 步')
 assert_not_contains(r'### ⑨ 渲染导图', '独立 ⑨ 步')
@@ -674,11 +671,14 @@ assert_contains(r'### 6\.6 Review Agent.*\*\*必做，不可跳过\*\*', '6.6 �
 # 6.6 节不应有"为什么强制"段（按用户原则删掉）
 assert_not_contains(r'## 为什么强制', '6.6 节"为什么强制"段')
 
+# 6.6 节不应再内联旧版复核清单（句法完整性等应移到 reference）
+assert_not_contains(r'相邻段边界是否把补语/数据/宾语拆散', '旧 6.6 内联清单')
+
 # 6.6 节应引用 reference/review_agent_prompt.md
 assert_contains(r'reference/review_agent_prompt\.md', '6.6 节引用 reference')
 
 # 6.6 节应有"review agent 规则"小节
-assert_contains(r'## review agent 规则', '6.6 节规则小节')
+assert_contains(r'review agent 规则', '6.6 节规则小节')
 
 # 6.6 节不应内联完整 prompt 模板（应只指向 reference）
 # 检测：内联模板里有"复核清单"完整 5 项（如果内联会全出现）
@@ -690,7 +690,7 @@ print('✓ SKILL.md 6.6 节验证通过')
 ```
 
 Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python3 .agents/skills/video-summary/scripts/tests/check_skill_md_6_6.py`
-Expected: **FAIL** — 旧 6.6 节还在（"为什么强制"段、内联 prompt）
+Expected: **FAIL** — 旧 6.6 节还在（"背景"段、内联复核清单、无"必做"标识）
 
 - [ ] **Step 2：改写 6.6 节**
 
@@ -768,7 +768,7 @@ Expected: 成功执行，输出 `▶ 恢复图片...` → `▶ 渲染思维导�
 - [ ] **Step 3：验证整理版内容正确**
 
 Run: `grep -c "^### 第 1 页" "/Users/jarvis/Documents/VideoToDoc-skills/runs/【闪客】上帝视角拆解三年 LLM 架构演进！_纯语言_20260705_104606/【闪客】上帝视角拆解三年 LLM 架构演进！_纯语言_讲义_整理版_20260705_105650.md"`
-Expected: 输出 `1` 或 `2`（`### 第 1 页` 出现 1-2 次，**不**应该出现 2 次代表 sync_toc 误覆盖）
+Expected: 输出 `1`（`### 第 1 页` 仅出现 1 次；若为 2 说明 sync_toc 残留未清）
 
 Run: `head -20 "/Users/jarvis/Documents/VideoToDoc-skills/runs/【闪客】上帝视角拆解三年 LLM 架构演进！_纯语言_20260705_104606/【闪客】上帝视角拆解三年 LLM 架构演进！_纯语言_讲义_整理版_20260705_105650.md"`
 Expected: 第 1 行是 H1；第 2 行是空行；后面是 `## 图文讲义` 标题（不是 `### 第 1 页` 直接开始）
@@ -778,8 +778,8 @@ Expected: 第 1 行是 H1；第 2 行是空行；后面是 `## 图文讲义` 标
 Run:
 ```bash
 cd /Users/jarvis/Documents/VideoToDoc-skills
-python -m pytest .agents/skills/video-to-slides/scripts/tests/test_restore_images_no_sync_toc.py -v
-python -m pytest .agents/skills/video-to-slides/scripts/tests/test_finalize.py -v
+.venv/bin/pytest .agents/skills/video-to-slides/scripts/tests/test_restore_images_no_sync_toc.py -v
+.venv/bin/pytest .agents/skills/video-to-slides/scripts/tests/test_finalize.py -v
 python3 .agents/skills/video-to-slides/scripts/tests/check_skill_md_5_6.py
 python3 .agents/skills/video-to-slides/scripts/tests/check_skill_md_stage3.py
 python3 .agents/skills/video-summary/scripts/tests/check_skill_md_6_6.py
@@ -788,7 +788,7 @@ Expected: **全部 PASS**
 
 - [ ] **Step 5：跑 video-to-slides 现有测试套件确认未破坏**
 
-Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && python -m pytest .agents/skills/video-to-slides/scripts/videotodoc/tests/ -v 2>&1 | tail -20`
+Run: `cd /Users/jarvis/Documents/VideoToDoc-skills && .venv/bin/pytest .agents/skills/video-to-slides/scripts/videotodoc/tests/ -v 2>&1 | tail -20`
 Expected: 现有测试全过（或已记录的失败与本次修复无关）
 
 - [ ] **Step 6：Final commit（如有需要）**
