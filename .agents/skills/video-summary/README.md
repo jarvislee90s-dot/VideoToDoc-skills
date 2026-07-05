@@ -101,6 +101,7 @@ python3 scripts/process.py doctor
 - **ffmpeg**：`brew install ffmpeg`（macOS）/ `apt install ffmpeg`（Linux）
 - **mlx-whisper**：`pip install mlx-whisper`（ASR 时需要，字幕成功则可跳过）
 - **curl_cffi**：`pip install curl_cffi`（B站下载必需，TLS 指纹绕过）
+- **browser_cookie3**：`pip install browser_cookie3`（可选，B站 v_voucher 风控时读取浏览器 cookies 降级）
 
 ## B站支持
 
@@ -109,6 +110,13 @@ B站视频下载通常需要代理才能成功，请在命令中添加 `--proxy`
 ```bash
 python3 scripts/process.py "<B站URL>" --proxy "http://127.0.0.1:7890"
 ```
+
+**B站风控降级**：若触发 v_voucher 风控（未登录态无法获取视频流），会依次尝试：
+1. buvid cookies 策略（curl_cffi 指纹）
+2. 读取浏览器 cookies（需 `browser_cookie3`，`--cookies-from-browser chrome`）
+3. 回退 yt-dlp（带浏览器 cookies）
+
+`browser_cookie3` 是可选依赖，未安装时降级路径 2 静默跳过。运行 `doctor` 可检查其状态。
 
 ## 产物
 
@@ -122,19 +130,27 @@ runs/<视频标题>_<时间戳>/
 └── <视频标题>_总结_<时间戳>.md            # Agent 生成的摘要
 ```
 
-**注意**：如果成功获取字幕，`video.mp4` 和 `audio.wav` **不会生成**。
+**注意**：如果成功获取字幕，`<视频标题>.mp4` 和 `audio.wav` **不会生成**。
 
 ## 文件结构
 
 ```
 video-summary/
-├── SKILL.md          # Skill 操作手册（触发条件、工作流、参数）
-├── README.md         # 本文件（项目介绍、安装、产物）
+├── SKILL.md                              # 操作手册（触发条件、工作流、参数）
+├── README.md                             # 本文件（项目介绍、安装、产物）
+├── reference/
+│   └── review_agent_prompt.md            # 合并质量复核提示词模板（句法硬标准）
+├── signal_stats.py                       # 视频类型信号统计
 ├── scripts/
-│   ├── process.py    # 主处理脚本
-│   └── _project.py   # 项目路径定位
+│   ├── process.py                        # 主处理（下载/字幕/ASR/摘要）
+│   ├── prepare_merge.py                  # 合并段落数据准备 → merge_input.json
+│   ├── apply_merge.py                    # 应用合并结果 → transcript_merged.json
+│   ├── review_merge.py                   # 合并质量客观检查 → merge_review_report.json
+│   └── tests/                            # 单元测试 + 文档断言脚本
+│       ├── check_review_report.py        # 校验 self_review 审计键
+│       └── check_skill_md_6_6.py         # SKILL.md 6.6 节约定断言
 └── assets/
-    └── task_flow.png # 整体流程图
+    └── task_flow.png
 ```
 
 ## 与 video-to-slides 配合

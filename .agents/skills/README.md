@@ -22,13 +22,14 @@
 │  │    无字幕 → 下载视频        │  │
 │  │ 2. 提取音频 → ASR 转录      │  │
 │  │ 3. 生成 transcript          │  │
-│  │ 4. Agent 生成摘要           │  │
+│  │ 4. 合并段落 + Review 复核   │  │
+│  │ 5. Agent 生成摘要           │  │
 │  └─────────────────────────────┘  │
 └─────────────┬─────────────────────┘
               │
               ▼
         runs/<视频标题>_<时间戳>/
-        ├── video.mp4（如需ASR）
+        ├── <视频标题>.mp4（如需ASR）
         ├── transcript.json
         ├── transcript.txt
         └── <视频标题>_总结_<时间戳>.md
@@ -37,13 +38,13 @@
 ┌─────────────────────────────────┐
 │      video-to-slides             │
 │  ┌─────────────────────────────┐  │
-│  │ 1. 截图 + 三段式去重        │  │
-│  │ 2. 图文对齐（时间轴）        │  │
-│  │ 3. 生成讲义 Markdown        │  │
-│  │ 4. Agent 全文目录           │  │
-│  │ 5. Agent 语义整理           │  │
-│  │ 6. Agent 思维导图           │  │
-│  │ 7. 渲染导图 + Word 输出     │  │
+│  │ 1. capture 截图 + 分段草案  │  │
+│  │ 2. review-segments(Agent)  │  │
+│  │ 3. finalize 图文对齐+讲义MD │  │
+│  │ 4. Agent 全文目录+紧凑版    │  │
+│  │ 5. Agent 语义整理版          │  │
+│  │ 6. Agent 思维导图            │  │
+│  │ 7. finalize.py 渲染导图+Word│  │
 │  └─────────────────────────────┘  │
 └─────────────┬─────────────────────┘
               │
@@ -94,7 +95,7 @@
 
 **功能**：视频截图去重 → 图文对齐 → 语义整理 → 目录 → 思维导图 → Word
 
-**输入**：video.mp4 + transcript.json（来自 video-summary）
+**输入**：<视频标题>.mp4 + transcript.json（来自 video-summary）
 **输出**：
 - `runs/<视频标题>_<时间戳>/`
   - `<视频标题>_讲义_<时间戳>.md`
@@ -147,9 +148,11 @@ python3 scripts/process.py "https://www.youtube.com/watch?v=xxx"
 # 输出：runs/<视频标题>_<时间戳>/<视频标题>_总结_<时间戳>.md
 cd ..
 
-# Step 2: 视频 → 讲义
+# Step 2: 视频 → 讲义（video-summary 下载的视频名为 <视频标题>.mp4）
 cd video-to-slides
-python3 scripts/process.py "runs/<视频标题>_<时间戳>/video.mp4"
+python3 scripts/process.py "runs/<视频标题>_<时间戳>/<视频标题>.mp4"
+# Agent 完成目录/整理/思维导图后，跑 finalize.py 收尾：
+python3 scripts/finalize.py "runs/<视频标题>_<时间戳>"
 # 输出：runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md
 cd ..
 
@@ -164,28 +167,41 @@ python3 scripts/publish.py \
 
 ```
 skills/
-├── README.md                          # 本文件（项目总览）
+├── README.md                          # 项目总览
 ├── requirements.txt                   # Python 依赖
+├── _shared/                           # 跨 skill 共享代码
+│   ├── project.py
+│   ├── text_utils.py
+│   └── transcript_merge/             # 合并段落策略
 ├── video-summary/                     # Skill 1: 视频摘要
-│   ├── README.md                      # 项目介绍、安装、产物
-│   ├── SKILL.md                       # 操作手册（触发条件、工作流、参数）
+│   ├── README.md
+│   ├── SKILL.md
+│   ├── reference/
+│   │   └── review_agent_prompt.md   # 合并质量复核提示词（句法硬标准）
+│   ├── signal_stats.py               # 视频类型信号统计
 │   ├── scripts/
-│   │   ├── process.py
-│   │   └── _project.py
+│   │   ├── process.py               # 主处理（下载/字幕/ASR/摘要）
+│   │   ├── prepare_merge.py         # 合并段落数据准备
+│   │   ├── apply_merge.py           # 应用合并结果
+│   │   ├── review_merge.py          # 合并质量客观检查
+│   │   └── tests/                   # 测试 + check 脚本
 │   └── assets/
 │       └── task_flow.png
 ├── video-to-slides/                   # Skill 2: 图文讲义
-│   ├── README.md                      # 项目介绍、安装、产物
-│   ├── SKILL.md                       # 操作手册（触发条件、工作流、参数）
+│   ├── README.md
+│   ├── SKILL.md
 │   ├── scripts/
-│   │   ├── process.py
-│   │   ├── render_mindmap.py
-│   │   └── _project.py
+│   │   ├── process.py               # capture + finalize 截图对齐
+│   │   ├── finalize.py               # 阶段3收尾 wrapper
+│   │   ├── render_mindmap.py         # 思维导图渲染
+│   │   ├── restore_images.py         # 图片恢复
+│   │   └── tests/                    # 文档断言脚本
+│   ├── videotodoc/                   # 核心包（pipeline/align/slides/mindmap）
 │   └── assets/
 │       └── task_flow.png
 └── feishu-markdown-publish/           # Skill 3: 飞书发布
-    ├── README.md                      # 项目介绍、安装、产物
-    ├── SKILL.md                       # 操作手册（触发条件、工作流、参数）
+    ├── README.md
+    ├── SKILL.md
     ├── scripts/
     │   ├── publish.py
     │   └── _project.py
@@ -202,6 +218,7 @@ yt-dlp>=2024.1.0
 pycryptodomex
 mlx-whisper
 curl_cffi
+browser_cookie3          # 可选：B站风控降级读取浏览器 cookies
 python-docx
 rapidocr
 ```

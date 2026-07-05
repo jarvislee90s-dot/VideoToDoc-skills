@@ -72,21 +72,21 @@
 
 ```bash
 # 发布到公共文档
-python3 scripts/publish_markdown.py \
+python3 scripts/publish.py \
   runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md
 
 # 发布到指定知识库
-python3 scripts/publish_markdown.py \
+python3 scripts/publish.py \
   runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md \
   "https://example.feishu.cn/wiki/space/7641581418232957895"
 
 # 只传 space_id
-python3 scripts/publish_markdown.py \
+python3 scripts/publish.py \
   runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md \
   7641581418232957895
 
 # Dry-run 检查
-python3 scripts/publish_markdown.py \
+python3 scripts/publish.py \
   runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md --dry-run
 ```
 
@@ -154,7 +154,7 @@ feishu-markdown-publish/
 ├── SKILL.md         # Skill 操作手册（触发条件、工作流、参数）
 ├── README.md        # 本文件（项目介绍、安装、产物）
 ├── scripts/
-│   ├── publish_markdown.py   # 发布入口脚本
+│   ├── publish.py   # 发布入口脚本
 │   └── _project.py  # 项目路径定位
 └── assets/
     └── task_flow.png # 整体流程图

@@ -31,14 +31,24 @@
 提示运行      截图 + 去重
 video-summary   │
           ┌─────┴─────┐
-          │ 三段式去重 │
-          │ 场景切换   │
-          │ 15秒兜底   │
+          │ capture    │
+          │ 时长密度截图│
+          │ + 分段草案  │
           └─────┬─────┘
                 │
                 ▼
-          图文对齐
-        毫秒级时间轴
+          ┌─────────────┐
+          │ review-seg  │
+          │ Agent 介入  │
+          │ 分段审查    │
+          └─────┬───────┘
+                │
+                ▼
+          finalize
+          图文对齐 + 讲义MD
+          （跨段截图按区间
+           切分文本，句末标点
+           回溯断句）
                 │
                 ▼
           ┌─────────────┐
@@ -61,8 +71,9 @@ video-summary   │
                  │
                  ▼
         ┌─────────────────┐
-        │ render_mindmap  │
-        │  渲染导图 + Word │
+        │ finalize.py    │
+        │ 恢复图片+渲染导图│
+        │ + Word 输出    │
         └────────┬────────┘
                  │
                  ▼
@@ -109,7 +120,11 @@ python3 scripts/process.py \
   "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
   --transcript "runs/<视频标题>_<时间戳>/transcript.json"
 
-# Agent 完成目录、语义整理、手写 mindmap.mmd 后，生成最终导图与 Word
+# Agent 完成目录、紧凑版、整理版、手写 <视频标题>_思维导图_<时间戳>.mmd 后，
+# 跑 finalize.py 统一收尾（恢复图片 + 渲染导图 + 生成 Word）
+python3 scripts/finalize.py "runs/<视频标题>_<时间戳>"
+
+# 手工修改思维导图后单独刷新
 python3 scripts/render_mindmap.py "runs/<视频标题>_<时间戳>"
 ```
 
@@ -117,15 +132,19 @@ python3 scripts/render_mindmap.py "runs/<视频标题>_<时间戳>"
 
 ```
 video-to-slides/
-├── SKILL.md               # Skill 操作手册（触发条件、工作流、参数）
+├── SKILL.md               # 操作手册（触发条件、工作流、参数）
 ├── README.md              # 本文件（项目介绍、安装、产物）
 ├── scripts/
-│   ├── process.py         # 主处理脚本
-│   ├── render_mindmap.py  # 思维导图渲染
-│   ├── restore_images.py  # 语义整理后恢复图片（Agent 改写后执行）
-│   └── _project.py        # 项目路径定位
+│   ├── process.py         # capture + finalize 截图对齐主流程
+│   ├── finalize.py        # 阶段3收尾 wrapper（恢复图片 + 渲染导图 + Word）
+│   ├── render_mindmap.py  # 思维导图渲染（finalize.py 内部调用，也可单独刷新）
+│   ├── restore_images.py  # 语义整理后恢复图片（finalize.py 内部调用）
+│   ├── _project.py        # 项目路径定位
+│   └── tests/             # 文档断言脚本（check_skill_md_5_6 等）
+├── videotodoc/            # 核心包（pipeline/align/slides/mindmap/document）
+│   └── tests/             # 单元测试
 └── assets/
-    └── task_flow.png      # 整体流程图
+    └── task_flow.png
 ```
 
 ## 与其他 Skill 配合
