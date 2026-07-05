@@ -141,8 +141,15 @@ video-to-slides/
 │   ├── restore_images.py  # 语义整理后恢复图片（finalize.py 内部调用）
 │   ├── _project.py        # 项目路径定位
 │   └── tests/             # 文档断言脚本（check_skill_md_5_6 等）
-├── videotodoc/            # 核心包（pipeline/align/slides/mindmap/document）
-│   └── tests/             # 单元测试
+├── reference/            # 阶段 0 合并流程 + Review Agent prompt
+│   ├── merge_procedure.md       # 合并碎段完整流程（review ≤ 2 + check_report 闸口）
+│   └── review_agent_prompt.md   # Review Agent 双路径 prompt 模板
+├── videotodoc/            # 核心包（pipeline/align/slides/mindmap/document + merge 脚本）
+│   ├── prepare_merge.py         # 合并段落数据准备 → merge_input.json
+│   ├── apply_merge.py           # 应用合并结果 → transcript_merged.json
+│   ├── review_merge.py          # 合并质量客观检查 → merge_review_report.json
+│   ├── signal_stats.py          # 视频类型信号统计（L3 提示用）
+│   └── tests/                   # 单元测试 + check_review_report.py 闸口
 └── assets/
     └── task_flow.png
 ```

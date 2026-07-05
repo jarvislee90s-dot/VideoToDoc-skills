@@ -855,12 +855,12 @@ def cleanup(run_dir: Path, mode: str) -> None:
 
 
 def _print_merge_hint(transcript_json_path: Path) -> None:
-    """ASR 完成后提示 Agent 执行步骤6（合并碎段），不可跳过。"""
+    """ASR 完成后提示 Agent 后续步骤。"""
     print(
-        f"\n⚠️  下一步必做（SKILL.md 步骤6）：合并 ASR 碎段，不可跳过：\n"
-        f"    python3 .agents/skills/video-summary/scripts/prepare_merge.py {transcript_json_path}\n"
-        f"    # 然后读取 merge_input.json，按语义合并写 merged_groups.json\n"
-        f"    python3 .agents/skills/video-summary/scripts/apply_merge.py {transcript_json_path} <run_dir>/merged_groups.json"
+        f"\n✅  ASR 完成：{transcript_json_path}\n"
+        f"    下一步可选：\n"
+        f"    - 文字摘要：读 transcript.txt 写总结（SKILL.md 步骤 6）\n"
+        f"    - 图文讲义：运行 video-to-slides（阶段 0 自动合并碎段 + review）"
     )
 
 
