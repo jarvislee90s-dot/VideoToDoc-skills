@@ -109,10 +109,9 @@ flowchart TB
     end
 
     subgraph p3 ["阶段 3：脚本自动收尾"]
-        N --> O[restore_images.py<br/>恢复图片 + 同步目录]
-        O --> P[render_mindmap.py<br/>渲染导图 + Word]
-        P --> Q[<视频标题>_讲义_整理版.docx]
-        P --> R[<视频标题>_思维导图.png]
+        N --> O[finalize.py<br/>恢复图片 + 渲染导图 + Word]
+        O --> Q[<视频标题>_讲义_整理版.docx]
+        O --> R[<视频标题>_思维导图.png]
     end
 ```
 
@@ -238,37 +237,16 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 
 ## 阶段 3：脚本自动收尾
 
-> **Agent 注意**：以下步骤由脚本自动完成，你不需要干预。
+> **Agent 注意**：以下步骤由 `finalize.py` **统一脚本**完成，你不需要分别跑多个命令。
 
-### ⑧ 恢复图片并同步目录
+### ⑩ 收尾：图片恢复 + 思维导图 + Word
 
-- 运行 `scripts/restore_images.py`
-- 从紧凑版提取图片路径，替换整理版中的 `<!-- IMAGE:N -->` 占位符
-- 默认同时把紧凑版中的目录同步到整理版（避免 Agent 重复手动添加）
-
-### ⑨ 渲染导图
-
-- 运行 `scripts/render_mindmap.py`
-- 默认使用内置 Python 渲染器生成目录树状思维导图（多栏自适应）
-- 如需旧版 Mermaid 圆形散射，可传 `--mermaid` 参数
-- 将 `.mmd` 渲染为 `.png`
-- 当节点过多或单图尺寸过大时，自动按章节拆分为 `mindmap_01.png`、`mindmap_02.png`... 并同步插入 Markdown/Word
-- 同时生成或刷新两份 Word 文档
-
-### ⑩ 生成最终导图与 Word
-
-在 Agent 完成目录插入、语义整理、手写 `mindmap.mmd` 之后，运行：
-
-```bash
-python3 .agents/skills/video-to-slides/scripts/restore_images.py \
-  "runs/<视频标题>_<时间戳>/<视频标题>_讲义_紧凑版_<时间戳>.md" \
-  "runs/<视频标题>_<时间戳>/<视频标题>_讲义_整理版_<时间戳>.md"
-
-python3 .agents/skills/video-to-slides/scripts/render_mindmap.py \
-  "runs/<视频标题>_<时间戳>"
-```
-
-`render_mindmap.py` 会一次性渲染思维导图并生成/刷新紧凑版、整理版两份 Word。
+- 运行 `python3 .agents/skills/video-to-slides/scripts/finalize.py <run_dir>`：
+  - 自动恢复图片（`restore_images.py`）
+  - 自动渲染思维导图（`render_mindmap.py`）
+  - 自动生成/刷新紧凑版、整理版两份 Word
+- 当节点过多或单图尺寸过大时，自动按章节拆分 `mindmap_01.png`、`mindmap_02.png`... 并同步插入 Markdown/Word
+- **此步骤是 agent 唯一需要手动运行的脚本命令**（阶段 1 入口 `process.py` 除外）
 
 ---
 
