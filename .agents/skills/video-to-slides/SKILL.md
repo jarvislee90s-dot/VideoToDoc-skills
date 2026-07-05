@@ -105,7 +105,7 @@ flowchart TB
     subgraph p2 ["阶段 2：Agent 执行"]
         K --> L[整理 Agent<br/>生成全文目录]
         L --> M[整理 Agent<br/>语义整理文字]
-        M --> N[整理 Agent<br/>手写 mindmap.mmd]
+        M --> N[整理 Agent<br/>手写 <视频标题>_思维导图_<时间戳>.mmd]
     end
 
     subgraph p3 ["阶段 3：脚本自动收尾"]
@@ -158,7 +158,7 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 | `<视频标题>_讲义_紧凑版_<时间戳>.md` | 紧凑段落版 |
 | `<视频标题>_讲义_整理版_<时间戳>.md` | **Agent 工作文件**（含 `<!-- IMAGE:N -->` 占位符） |
 
-> **注意**：此阶段**仅输出 Markdown**，`.docx` 和 `.png` 尚未生成。Agent 完成整理并手写 `mindmap.mmd` 后，需运行 `render_mindmap.py` 生成最终导图与 Word。
+> **注意**：此阶段**仅输出 Markdown**，`.docx` 和 `.png` 尚未生成。Agent 完成整理并手写 `<视频标题>_思维导图_<时间戳>.mmd` 后，需运行 `render_mindmap.py` 生成最终导图与 Word。
 
 ---
 

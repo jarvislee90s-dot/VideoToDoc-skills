@@ -11,6 +11,23 @@ from .mindmap_mermaid import add_chapter_numbers, inject_tidy_tree_config
 from .utils import VideoToDocError
 
 
+def _find_mindmap_source(run_dir: Path) -> Path:
+    """查找思维导图源文件。
+
+    优先匹配 SKILL.md 约定的 <标题>_思维导图_<时间戳>.mmd（取最新），
+    fallback 到旧版 mindmap.mmd（向后兼容）。两者都没有时报错。
+    """
+    for pattern in ("*_思维导图_*.mmd", "mindmap.mmd"):
+        candidates = sorted(run_dir.glob(pattern), reverse=True)
+        if candidates:
+            return candidates[0]
+    raise VideoToDocError(
+        f"在 {run_dir} 找不到思维导图源文件"
+        "（*_思维导图_*.mmd 或 mindmap.mmd）。"
+        "请先完成 Agent 整理步骤并编写思维导图源文件，再运行此脚本。"
+    )
+
+
 def render_mindmap_and_refresh_docs(
     run_dir: Path,
     mindmap_path: Path | None = None,
@@ -21,13 +38,10 @@ def render_mindmap_and_refresh_docs(
     del use_mermaid  # 已废弃，保留参数兼容性
 
     run_dir = run_dir.resolve()
-    mindmap_path = mindmap_path or (run_dir / "mindmap.mmd")
+    mindmap_path = mindmap_path or _find_mindmap_source(run_dir)
     image_path = image_path or (run_dir / "mindmap.png")
     if not mindmap_path.exists():
-        raise VideoToDocError(
-            f"找不到 Mermaid 源文件：{mindmap_path}。"
-            "请先完成 Agent 整理步骤并编写 mindmap.mmd，再运行此脚本。"
-        )
+        raise VideoToDocError(f"找不到 Mermaid 源文件：{mindmap_path}")
 
     raw_text = mindmap_path.read_text(encoding="utf-8")
     numbered = add_chapter_numbers(raw_text)

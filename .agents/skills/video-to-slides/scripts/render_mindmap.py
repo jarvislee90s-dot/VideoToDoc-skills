@@ -37,10 +37,16 @@ def _latest_run_dir(project_dir: Path) -> Path | None:
     runs_dir = project_dir / "runs"
     if not runs_dir.exists():
         return None
-    candidates = [p for p in runs_dir.iterdir() if (p / "mindmap.mmd").exists()]
+    candidates = []
+    for p in runs_dir.iterdir():
+        if not p.is_dir():
+            continue
+        # 任一命名约定存在即可（带时间戳的优先，mindmap.mmd 兼容）
+        if (p / "mindmap.mmd").exists() or list(p.glob("*_思维导图_*.mmd")):
+            candidates.append(p)
     if not candidates:
         return None
-    return max(candidates, key=lambda p: (p / "mindmap.mmd").stat().st_mtime_ns)
+    return max(candidates, key=lambda p: p.stat().st_mtime_ns)
 
 
 if __name__ == "__main__":
