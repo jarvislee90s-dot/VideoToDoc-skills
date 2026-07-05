@@ -133,18 +133,23 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 
 ### 6.6 Review Agent 复核合并质量（**必做，不可跳过**）
 
-> ⚠️ **警告**：本步骤**必须**独立 subagent 跑一次，**不跑不许进入下一步**（摘要 / video-to-slides / feishu 发布）。
+> ⚠️ **警告**：本步骤**必须**做一次 review，**不跑不许进入下一步**（摘要 / video-to-slides / feishu 发布）。执行方式按你的工具能力二选一。
+
+**先判断能力**：检查你的可用工具是否有子代理调度能力（Claude Code 的 `Task`、Codex 的 `spawn_agent`、或配置 `multi_agent=true` 等）。
+
+**路径 A（首选——支持子代理时）**：派一个独立子代理，把 `reference/review_agent_prompt.md` 作为其 system prompt 加载，让它复核 `merged_groups.json`。子代理与你上下文隔离，最严谨。
+
+**路径 B（fallback——不支持子代理时）**：由你（当前 agent）加载 `reference/review_agent_prompt.md`，按其顶部的「路径 B · 上下文重置」四步自审（角色剥离 → 不凭记忆重读原始短句 → 强制挑刺 → 输出报告标注 `self_review: true`）。自审不如独立子代理彻底，必须更严格对照硬标准。
 
 **步骤**：
 
 1. 整理 agent 完成首次合并 → `merged_groups.json`
 2. 跑 `apply_merge.py` 校验索引连续 → `transcript_merged.json`
 3. 跑 `review_merge.py` 客观检查 → 初步 `merge_review_report.json`
-4. **【必做】派独立 subagent 复核**：使用 `reference/review_agent_prompt.md` 中的 prompt 模板
-5. subagent 读 `merge_input.json` + `merged_groups.json` + `merge_review_report.json`，输出增强版 `merge_review_report.json`
-6. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
-7. 重跑 `apply_merge.py` + `review_merge.py` + subagent 复核，直到 `pass=true`
-8. **直到 pass 才进下一步**
+4. **【必做】按路径 A 或 B 执行 review**，输出增强版 `merge_review_report.json`
+5. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
+6. 重跑 `apply_merge.py` + `review_merge.py` + review，直到 `pass=true`
+7. **直到 pass 才进下一步**
 
 **review agent 规则**：
 - 只输出报告，不直接修改 `merged_groups.json`。
@@ -152,7 +157,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 - 所有判断必须基于 `merge_input.json` 中的约束数据，不能自行放宽。
 - 遇到超出 `chars_per_group_range` 或 `per_group_range` 的段，先判断是否为“同话题完整”导致；若是，可接受为 warning；若不是，应建议切分。
 
-**Prompt 模板**：见 `reference/review_agent_prompt.md`（独立文件，agent 调起 subagent 时加载）。
+**Prompt 模板 + 硬标准**：见 `reference/review_agent_prompt.md`（含句法完整性硬标准与判定信号）。
 
 ### 6.7 整理 agent 根据 Review Report 修正
 

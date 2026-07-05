@@ -26,6 +26,11 @@ assert_not_contains(r"相邻段边界是否把补语/数据/宾语拆散", "旧 
 # 6.6 节应引用 reference/review_agent_prompt.md
 assert_contains(r"reference/review_agent_prompt\.md", "6.6 节引用 reference")
 
+# 6.6 节必须有双执行路径（sub-agent 首选 + 提示词注入 fallback）
+assert_contains(r"路径 A", "6.6 双路径 A")
+assert_contains(r"路径 B", "6.6 双路径 B")
+assert_contains(r"self_review", "6.6 自审标注")
+
 # 6.6 节应有"review agent 规则"小节（文档用加粗样式）
 assert_contains(r"review agent 规则", "6.6 节规则小节")
 
