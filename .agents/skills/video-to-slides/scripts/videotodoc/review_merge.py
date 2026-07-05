@@ -15,7 +15,7 @@ import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_shared"))
 from transcript_merge import normalize_raw  # noqa: E402
 
 logger = logging.getLogger(__name__)
