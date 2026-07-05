@@ -134,6 +134,16 @@ def check_dependencies(fatal: bool = True, check_asr: bool = False, check_downlo
             results.append(("yt-dlp", "pip install yt-dlp pycryptodomex", True))
         except ModuleNotFoundError:
             results.append(("yt-dlp", "pip install yt-dlp pycryptodomex", False))
+        # browser_cookie3：B站 v_voucher 风控降级路径 2 依赖，可选但缺失会静默失败
+        try:
+            import browser_cookie3  # noqa: F401
+            results.append(
+                ("browser_cookie3", "pip install browser_cookie3 (可选，B站风控降级)", True)
+            )
+        except ModuleNotFoundError:
+            results.append(
+                ("browser_cookie3", "pip install browser_cookie3 (可选，B站风控降级)", False)
+            )
 
     if check_asr:
         try:
