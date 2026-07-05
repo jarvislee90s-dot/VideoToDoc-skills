@@ -690,12 +690,14 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
         except Exception as e:
             print(f"  ⚠️  curl_cffi 下载失败（{e}），回退到 yt-dlp...")
 
-    print(f"  ⬇️  下载视频...")
+    # 与 curl_cffi 分支命名一致，避免 video-to-slides 找不到文件
+    safe_title = _slugify(title or "video")
+    print(f"  ⬇️  下载视频（yt-dlp）...")
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
         "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-        "outtmpl": str(run_dir / "video.%(ext)s"),
+        "outtmpl": str(run_dir / f"{safe_title}.%(ext)s"),
         "merge_output_format": "mp4",
     }
     if proxy:
@@ -714,10 +716,10 @@ def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str
         ydl.download([url])
 
     for ext in ["mp4", "webm", "mkv", "mov"]:
-        candidate = run_dir / f"video.{ext}"
+        candidate = run_dir / f"{safe_title}.{ext}"
         if candidate.exists():
             if ext != "mp4":
-                mp4_path = run_dir / "video.mp4"
+                mp4_path = run_dir / f"{safe_title}.mp4"
                 candidate.rename(mp4_path)
                 return mp4_path
             return candidate
@@ -831,7 +833,7 @@ def cleanup(run_dir: Path, mode: str) -> None:
             f.unlink(missing_ok=True)
             print(f"  🗑️  已删除：{f.name}")
     elif mode == "transcript-only":
-        for f in run_dir.glob("video.mp4"):
+        for f in run_dir.glob("*.mp4"):
             f.unlink(missing_ok=True)
             print(f"  🗑️  已删除：{f.name}")
         for f in run_dir.glob("audio.wav"):
