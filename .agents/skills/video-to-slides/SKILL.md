@@ -45,7 +45,7 @@ capture → review-segments(agent 介入) → finalize（仅 Markdown） → ren
 
 ## 完整工作流图示
 
-### 前置 Skill：video-summary 工作流
+### 前置 Skill：video-summary 工作流（瘦身后）
 
 ```mermaid
 flowchart TB
@@ -59,27 +59,13 @@ flowchart TB
         F --> G
     end
 
-    G --> H[prepare_merge.py]
-    subgraph vs_merge ["语义合并 & Review 闭环"]
-        H --> I[merge_input.json<br/>含 suggestion 约束]
-        I --> J[整理 Agent<br/>语义合并]
-        J --> K[merged_groups.json]
-        K --> L[apply_merge.py<br/>校验 index]
-        L -- 校验失败 --> J
-        L -- 通过 --> M[transcript_merged.json]
-        K --> N[review_merge.py<br/>客观检查]
-        N --> O[merge_review_report.json<br/>初版]
-        O --> P[Review Agent<br/>独立上下文语义复核]
-        P --> Q[merge_review_report.json<br/>增强版]
-        Q --> J
-        J -. 按报告局部修正 .-> K
-    end
-
-    M --> R[整理/摘要 Agent]
+    G --> R[Agent 摘要<br/>读 transcript.txt]
     subgraph vs_output ["产物输出"]
         R --> S[<视频标题>_总结_<时间戳>.md]
-        M --> T[transcript.txt<br/>合并后文本]
+        G --> T[transcript.txt<br/>纯文本转录]
     end
+
+    G ==> VTS["video-to-slides 阶段 0<br/>（合并 + review 在此执行）"]
 ```
 
 ### 本 Skill：video-to-slides 工作流
@@ -87,14 +73,13 @@ flowchart TB
 ```mermaid
 flowchart TB
     subgraph input ["输入检查"]
-        A[视频 + transcript.json/<br/>transcript_merged.json] --> B{文件是否存在？}
+        A[视频 + transcript.json<br/>（阶段 0 产出 transcript_merged.json）] --> B{文件是否存在？}
         B -- 否 --> C[提示先运行 video-summary]
         B -- 是 --> D[process.py]
     end
 
     subgraph p1 ["阶段 1：脚本自动执行"]
-        D --> E[前置合并<br/>优先 transcript_merged.json]
-        E --> F[截图 + 三段式去重]
+        D --> E[截图 + 三段式去重]
         F --> G[pending_segments.json]
         G --> H[Review Agent<br/>审查 keep/merge/split]
         H --> I[confirmed_segments.json]
@@ -117,6 +102,23 @@ flowchart TB
 
 ---
 
+## 阶段 0：合并转录碎段（必做）
+
+> **Agent 注意**：本阶段由你主导，详细流程读 `reference/merge_procedure.md` 并完整执行：
+> 1. 结构原型判定（4 原型 + L1/L2/L3 三层证据，详见 reference 6.1）
+> 2. `prepare_merge` → `merged_groups.json` → `apply_merge` → `review_merge`
+> 3. **Review Agent 双路径复核**（路径 A 独立子代理 / 路径 B 上下文重置自审）
+> 4. 若 review 报 critical → 修改 → 重跑 `apply_merge` + `review_merge` + Review Agent，**最多 2 次 review 迭代**
+> 5. **收尾必跑**：`python3 scripts/videotodoc/tests/check_review_report.py <run_dir>`，退出码必须 0
+> 6. 不通过 `check_review_report` 闸口**禁止进入阶段 1**
+> 7. 全部硬标准、合并规则、句法完整性要求、Review Agent prompt 模板：在 `reference/merge_procedure.md` + `reference/review_agent_prompt.md`
+
+阶段 0 完成后必须存在：
+- `transcript_merged.json`
+- `merge_review_report.json`（含 `pass: true` + `self_review` 键，已被 `check_review_report.py` 校验）
+
+---
+
 ## 阶段 1：脚本自动执行
 
 > **Agent 注意**：以下步骤由脚本自动完成，你不需要干预。
@@ -125,19 +127,6 @@ flowchart TB
 
 - 确认视频文件、`transcript.json` 是否存在
 - 缺少时提示用户先运行 `video-summary`
-
-### ①.5 前置合并（复用 video-summary 转录时）
-
-当通过 `--transcript` 复用 video-summary 产出的 `transcript.json` 时，若碎段很多（半句话一段，
-通常 ASR 产出数百段），直接用于图文对齐会导致每页只有半句话、页数碎片化。此时应**先执行
-video-summary 的 ⑤.5 语义合并步骤**：
-
-1. `prepare_merge`：读取 `transcript.json` 生成 `merge_input.json`（含目标段数建议）
-2. Agent 按 ⑤.5 合并规则写 `merged_groups.json`（同话题聚合，原文保留只加标点）
-3. `apply_merge` 校验并落盘，产出 `transcript_merged.json`（约数十段）
-
-pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存在），无需额外参数；
-若未做合并，则回退使用原始 `transcript.json`。
 
 ### ② 截图 + 三段式去重
 
