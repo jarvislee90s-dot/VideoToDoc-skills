@@ -77,3 +77,4 @@
 - 严重性只有 `critical` / `warning` 两级
 - `pass` 在所有 issues 都是可接受 warning 时为 true，有 critical 时为 false
 - 不要放宽或跳过清单任何一项
+- **输出 JSON 必须包含 `self_review` 键**（bool）：路径 A 设 `false`，路径 B 设 `true`。缺失该键即视为 review 未完成、未标注执行路径，后续校验脚本（`scripts/tests/check_review_report.py`）会拦截。

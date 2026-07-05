@@ -149,7 +149,8 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 4. **【必做】按路径 A 或 B 执行 review**，输出增强版 `merge_review_report.json`
 5. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
 6. 重跑 `apply_merge.py` + `review_merge.py` + review，直到 `pass=true`
-7. **直到 pass 才进下一步**
+6.5 **【必做】跑存在性校验**：`python3 scripts/tests/check_review_report.py <run_dir>`，退出码必须为 0。若报「缺少 self_review 键」，说明 review 未标注执行路径，回到步骤 4 重做。
+7. **直到 pass 且校验退出码为 0 才进下一步**
 
 **review agent 规则**：
 - 只输出报告，不直接修改 `merged_groups.json`。
