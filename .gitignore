@@ -27,3 +27,10 @@ tmp/
 .superpowers/*
 !.superpowers/sdd/
 .trae/
+
+# 第三方 skill 工具产物（speckit 自动生成的模板目录）
+.agents/skills/speckit-*/
+
+# 根目录临时文件（其他 Agent / 工具遗留，非项目跟踪内容）
+/bugfix_plan.md
+/rite_zhengli.py
