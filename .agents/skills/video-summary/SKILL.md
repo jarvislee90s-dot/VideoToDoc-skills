@@ -64,25 +64,25 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 
 ```bash
 # URL 输入（优先获取字幕）
-python3 scripts/process.py "https://www.youtube.com/watch?v=xxx"
+python3 .agents/skills/video-summary/scripts/process.py "https://www.youtube.com/watch?v=xxx"
 
 # 本地视频
-python3 scripts/process.py "/path/to/video.mp4"
+python3 .agents/skills/video-summary/scripts/process.py "/path/to/video.mp4"
 
 # 强制跳过字幕，使用 ASR
-python3 scripts/process.py "https://www.youtube.com/watch?v=xxx" --no-subtitle
+python3 .agents/skills/video-summary/scripts/process.py "https://www.youtube.com/watch?v=xxx" --no-subtitle
 
 # 诊断依赖
-python3 scripts/process.py doctor
+python3 .agents/skills/video-summary/scripts/process.py doctor
 ```
 
 ### 常用参数
 
 ```bash
-python3 scripts/process.py "<URL>" --language zh
-python3 scripts/process.py "<URL>" --no-subtitle    # 跳过字幕，强制 ASR
-python3 scripts/process.py "<URL>" --cleanup all     # 清理中间文件
-python3 scripts/process.py "/path/to/video.mp4" --output-dir ./runs
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --language zh
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --no-subtitle    # 跳过字幕，强制 ASR
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --cleanup all     # 清理中间文件
+python3 .agents/skills/video-summary/scripts/process.py "/path/to/video.mp4" --output-dir ./runs
 ```
 
 ## 参数说明
@@ -134,7 +134,7 @@ export VIDEO_SUMMARY_PROXY_MAP="example.com:127.0.0.1:8080;other.site:127.0.0.1:
 或命令行直接指定：
 
 ```bash
-python3 scripts/process.py "<URL>" --proxy "http://127.0.0.1:8080"
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --proxy "http://127.0.0.1:8080"
 ```
 
 优先级：命令行 `--proxy` > 环境变量站点映射 > 无代理
@@ -147,7 +147,7 @@ B站视频需要 `buvid3/buvid4` 指纹 cookies 才能下载。脚本会自动�
 - 安装 `curl_cffi`：`pip install curl_cffi`
 - **使用代理**：B站下载通常需要代理才能成功，请在命令中添加 `--proxy` 参数：
   ```bash
-  python3 scripts/process.py "<B站URL>" --proxy "http://127.0.0.1:7890"
+  python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --proxy "http://127.0.0.1:7890"
   ```
 - 等 yt-dlp 上游修复后升级：`pip install -U yt-dlp`
 
@@ -159,7 +159,7 @@ B站视频需要 `buvid3/buvid4` 指纹 cookies 才能下载。脚本会自动�
 
 ```bash
 # 412 时用浏览器 cookies 重试
-python3 scripts/process.py "<B站URL>" --cookies-from-browser chrome
+python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --cookies-from-browser chrome
 ```
 
 ## 异常处理

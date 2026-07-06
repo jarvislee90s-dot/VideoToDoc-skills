@@ -7,19 +7,31 @@
 
 ---
 
-## 0. 硬约束：review 最多 2 次
+## 接口约定
+
+| 方向 | 文件 | 来源 / 去向 |
+|------|------|-------------|
+| 输入 | `transcript.json` | video-summary 阶段 1（字幕或 ASR 产出） |
+| 输出 | `transcript_merged.json` | 进入 video-to-slides 阶段 1（process.py 使用） |
+| 输出 | `merge_review_report.json` | 闸口校验 `check_review_report.py` 使用 |
+
+> `transcript_merged.json` **只在 Review Agent 通过后才产出**，不通过则继续修正直到 pass。
+
+---
+
+## 1. 硬约束：review 最多 2 次
 
 - 1st Review Agent 复核后如有 critical → 整理 agent 按意见修改 → 跑 `apply_merge` + `review_merge` + 2nd Review Agent
 - 2nd Review Agent 仍发现 critical → **立即停止**，上报用户介入（"review 循环耗尽，2 次未通过"）
 - 不允许无限制迭代
 - 每次 Review Agent 跑完必须 `merge_review_report.json` 含 `self_review` 键（路径 A 或路径 B 标记）
-- 阶段 0 收尾必跑：`python3 scripts/videotodoc/tests/check_review_report.py <run_dir>`，退出码必须 0（已有闸口，**沿用不重建**）
+- 阶段 0 收尾必跑：`python3 .agents/skills/video-to-slides/scripts/videotodoc/tests/check_review_report.py <run_dir>`，退出码必须 0（已有闸口，**沿用不重建**）
 
 ---
 
-## 6. 合并转录碎段（必做，不可跳过）
+## 2. 合并转录碎段（必做，不可跳过）
 
-6. **合并转录碎段（必做，不可跳过）**：
+
 
 **背景**：ASR 按语音停顿把句子切得太碎（平均 1-2 秒一句、半句话一段），
 直接用于图文对齐会导致每页只有半句话。**必须**先合并再用于后续步骤。
@@ -53,14 +65,14 @@
 
 **步骤**：
 1. 运行 prepare_merge 生成合并输入清单（含目标段数建议 + 原型策略）：
-   python3 .agents/skills/video-to-slides/scripts/videotodoc/videotodoc/prepare_merge.py \
+   python3 .agents/skills/video-to-slides/.agents/skills/video-to-slides/scripts/videotodoc/prepare_merge.py \
      runs/<run_dir>/transcript.json \
      --archetype <topic_preserve|enumeration_unit|visual_event|rescan_grid>   # 可选，L1 先验；缺省 auto 回退时长档
 2. 读取 runs/<run_dir>/merge_input.json（含 total_segments、suggestion、segments 清单）
 3. 把相邻短句按语义合并为段落，写 runs/<run_dir>/merged_groups.json：
    [{"indices": [0,1,2,3,4,5,6,7,8], "text": "合并后的一段话"}, ...]
 4. 运行 apply_merge 校验并落盘：
-   python3 .agents/skills/video-to-slides/scripts/videotodoc/videotodoc/apply_merge.py \
+   python3 .agents/skills/video-to-slides/.agents/skills/video-to-slides/scripts/videotodoc/apply_merge.py \
      runs/<run_dir>/transcript.json runs/<run_dir>/merged_groups.json
    失败则按报错修正 merged_groups.json 出错的分组后重跑本步（断点重做，不全量重做）
 
@@ -98,7 +110,7 @@
 所以你整理长句时个别字误差不会报错；只有 index 漏号/跳号/重复才报错，
 且报错精确到具体分组，只需修正出错分组重写文件重跑。
 
-### 6.6 Review Agent 复核合并质量（**必做，不可跳过**）
+### 2.1 Review Agent 复核合并质量（**必做，不可跳过**）
 
 > ⚠️ **警告**：本步骤**必须**做一次 review，**不跑不许进入下一步**（摘要 / video-to-slides / feishu 发布）。执行方式按你的工具能力二选一。
 
@@ -116,7 +128,7 @@
 4. **【必做】按路径 A 或 B 执行 review**，输出增强版 `merge_review_report.json`
 5. 整理 agent 根据 critical issues **局部修正** `merged_groups.json`
 6. 重跑 `apply_merge.py` + `review_merge.py` + review，直到 `pass=true`
-6.5 **【必做】跑存在性校验**：`python3 scripts/videotodoc/tests/check_review_report.py <run_dir>`，退出码必须为 0。若报「缺少 self_review 键」，说明 review 未标注执行路径，回到步骤 4 重做。
+6.5 **【必做】跑存在性校验**：`python3 .agents/skills/video-to-slides/scripts/videotodoc/tests/check_review_report.py <run_dir>`，退出码必须为 0。若报「缺少 self_review 键」，说明 review 未标注执行路径，回到步骤 4 重做。
 7. **直到 pass 且校验退出码为 0 才进下一步**
 
 **review agent 规则**：
@@ -127,7 +139,7 @@
 
 **Prompt 模板 + 硬标准**：见 `reference/review_agent_prompt.md`（含句法完整性硬标准与判定信号）。
 
-### 6.7 整理 agent 根据 Review Report 修正
+### 2.2 整理 agent 根据 Review Report 修正
 
 **步骤**：
 1. 读取 `merge_review_report.json`；
@@ -144,14 +156,14 @@
 
 ---
 
-## 7. 阶段 0 收尾闸口
+## 3. 阶段 0 收尾闸口
 
 ```bash
-python3 scripts/videotodoc/tests/check_review_report.py <run_dir>
+python3 .agents/skills/video-to-slides/scripts/videotodoc/tests/check_review_report.py <run_dir>
 ```
 
 - 退出码 0：进入阶段 1
-- 退出码 1：缺 `self_review` 键，回到 6.6 重跑 Review Agent
+- 退出码 1：缺 `self_review` 键，回到 2.1 重跑 Review Agent
 - 退出码 2：报告文件不存在，说明没跑 `review_merge.py` 或 Review Agent
 
 **不通过闸口禁止进入阶段 1。**

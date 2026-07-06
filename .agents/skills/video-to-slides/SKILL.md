@@ -45,7 +45,10 @@ capture → review-segments(agent 介入) → finalize（仅 Markdown） → ren
 
 ## 完整工作流图示
 
-### 前置 Skill：video-summary 工作流（瘦身后）
+### 前置 Skill：video-summary 工作流
+
+> video-summary 产物只有 `transcript.json`（+ `transcript.txt`）。
+> 合并碎段（→ `transcript_merged.json`）在 video-to-slides **阶段 0** 执行。
 
 ```mermaid
 flowchart TB
@@ -64,39 +67,40 @@ flowchart TB
         R --> S[<视频标题>_总结_<时间戳>.md]
         G --> T[transcript.txt<br/>纯文本转录]
     end
-
-    G ==> VTS["video-to-slides 阶段 0<br/>（合并 + review 在此执行）"]
 ```
 
 ### 本 Skill：video-to-slides 工作流
 
 ```mermaid
 flowchart TB
-    subgraph input ["输入检查"]
-        A[视频 + transcript.json<br/>（阶段 0 产出 transcript_merged.json）] --> B{文件是否存在？}
-        B -- 否 --> C[提示先运行 video-summary]
-        B -- 是 --> D[process.py]
+    subgraph stage0 ["阶段 0：合并转录碎段（Agent 执行）"]
+        A0[transcript.json<br/>来自 video-summary] --> B0[prepare_merge.py]
+        B0 --> C0[整理 Agent<br/>语义合并]
+        C0 --> D0[merged_groups.json]
+        D0 --> E0[apply_merge.py]
+        E0 --> F0[Review Agent<br/>双路径复核]
+        F0 --> G0[transcript_merged.json]
     end
 
-    subgraph p1 ["阶段 1：脚本自动执行"]
-        D --> E[截图 + 三段式去重]
-        F --> G[pending_segments.json]
-        G --> H[Review Agent<br/>审查 keep/merge/split]
-        H --> I[confirmed_segments.json]
-        I --> J[图文对齐]
-        J --> K[生成 Markdown<br/>原始/紧凑/整理版]
+    G0 --> A1[视频文件 + transcript_merged.json]
+
+    subgraph stage1 ["阶段 1：脚本自动执行"]
+        A1 --> B1[process.py]
+        B1 --> C1[截图 + 三段式去重]
+        C1 --> D1[图文对齐]
+        D1 --> E1[生成 Markdown<br/>原始/紧凑/整理版]
     end
 
-    subgraph p2 ["阶段 2：Agent 执行"]
-        K --> L[整理 Agent<br/>生成全文目录]
-        L --> M[整理 Agent<br/>语义整理文字]
-        M --> N[整理 Agent<br/>手写 <视频标题>_思维导图_<时间戳>.mmd]
+    subgraph stage2 ["阶段 2：Agent 执行"]
+        E1 --> F2[⑤ 生成全文目录]
+        F2 --> G2[⑥ 语义整理文字]
+        G2 --> H2[⑦ 编写思维导图 .mmd]
     end
 
-    subgraph p3 ["阶段 3：脚本自动收尾"]
-        N --> O[finalize.py<br/>恢复图片 + 渲染导图 + Word]
-        O --> Q[<视频标题>_讲义_整理版.docx]
-        O --> R[<视频标题>_思维导图.png]
+    subgraph stage3 ["阶段 3：脚本自动收尾"]
+        H2 --> I3[finalize.py<br/>恢复图片 + 渲染导图 + Word]
+        I3 --> J3[<视频标题>_讲义_整理版.docx]
+        I3 --> K3[<视频标题>_思维导图.png]
     end
 ```
 
@@ -130,7 +134,7 @@ flowchart TB
 
 ### ② 截图 + 三段式去重
 
-- 运行 `scripts/process.py`，默认 `--capture-mode audit --fallback-interval-sec 15`（OCR 去重默认开启，无需显式传；用 `--no-ocr-dedupe` 关闭）
+- 运行 `.agents/skills/video-to-slides/scripts/process.py`，默认 `--capture-mode audit --fallback-interval-sec 15 --video-type auto`（auto 自动判定视频类型，影响截图策略）（OCR 去重默认开启，无需显式传；用 `--no-ocr-dedupe` 关闭）
 - 三段式去重：明显重复 → 合并；明显不同 → 保留；不确定 → OCR 判定
 
 ### ③ 图文对齐
@@ -196,7 +200,7 @@ flowchart TB
 
 #### 任务 1：从紧凑版复制目录到整理版（**先做**）
 1. 读紧凑版 `## 图文讲义` 标题后、`### 第 1 页` 之前的内容（即 ⑤ 步写入的目录 + 分隔线）
-2. 在整理版的 `## 图文讲义` 标题后（**已有标题，不要再加**）、`### 第 1 页` 之前**插入这段内容**
+2. 在整理版的 `## 图文讲义` 标题后（**整理版默认不含此标题，须先补 `## 图文讲义` 再插入目录**）、`### 第 1 页` 之前**插入这段内容**
 
 #### 任务 2：改写每页文字
 1. **只改写文字内容**，不要动 `<!-- IMAGE:N -->` 占位符
@@ -211,13 +215,13 @@ flowchart TB
 
 ---
 
-### ⑦ 重写思维导图
+### ⑦ 编写思维导图
 
 **输入**：改写后的 `<视频标题>_讲义_整理版_<时间戳>.md`
 
 **任务**：
 1. 基于书面整理版提取核心观点
-2. 重写 `<视频标题>_思维导图_<时间戳>.mmd`
+2. 编写 `<视频标题>_思维导图_<时间戳>.mmd`
 3. 格式为 Mermaid mindmap
 
 **输出**：`<视频标题>_思维导图_<时间戳>.mmd`
@@ -270,6 +274,7 @@ python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标
 | `--capture-mode` | `audit` | 截图模式：fast/fine/audit |
 | `--fallback-interval-sec` | `15` | 兜底截图间隔秒数 |
 | `--no-ocr-dedupe` | 关闭 | 关闭 OCR 辅助去重（默认开启） |
+| `--video-type` | `auto` | 视频类型：auto/lecture_slides/talking_head/screen_recording/movie_cinematic/tutorial |
 | `--sync-offset-ms` | `None` | 时间偏移修正（毫秒） |
 | `--force-rebuild` | `[]` | 重跑步骤：audio/asr/slides/align/mindmap |
 
