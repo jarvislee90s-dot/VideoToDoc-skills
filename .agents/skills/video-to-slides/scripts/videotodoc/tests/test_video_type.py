@@ -24,3 +24,17 @@ class TestClassifyByFeatures:
     def test_video_type_values(self):
         for t in VideoType.__args__:
             assert isinstance(t, str)
+
+
+class TestSceneThresholdByType:
+    def test_talking_head_uses_loose_threshold(self):
+        from videotodoc.slides import _scene_threshold_for_type
+        assert _scene_threshold_for_type("talking_head", base=0.06) == 0.20
+
+    def test_lecture_slides_uses_sensitive_threshold(self):
+        from videotodoc.slides import _scene_threshold_for_type
+        assert _scene_threshold_for_type("lecture_slides", base=0.06) == 0.03
+
+    def test_auto_keeps_base(self):
+        from videotodoc.slides import _scene_threshold_for_type
+        assert _scene_threshold_for_type("auto", base=0.06) == 0.06

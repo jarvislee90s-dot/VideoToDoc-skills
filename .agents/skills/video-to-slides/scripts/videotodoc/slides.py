@@ -42,7 +42,9 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
     run_dir = output_dir.parent
     candidates_dir = run_dir / "slide_candidates"
     duration_ms = probe_duration_ms(video_path)
-    change_points = detect_scene_changes(video_path, settings.scene_threshold)
+    # 按视频类型调整场景检测阈值（auto 时用 settings.scene_threshold）
+    scene_threshold = _scene_threshold_for_type(settings.video_type, settings.scene_threshold)
+    change_points = detect_scene_changes(video_path, scene_threshold)
     candidate_points = _candidate_points(change_points, duration_ms, settings)
     if settings.capture_mode in {"fine", "audit", "complete"}:
         write_candidate_audit(video_path, candidate_points, candidates_dir, run_dir / "slide_candidates.html", settings)
@@ -178,6 +180,17 @@ def _classify_by_features(scene_rate: float, edge_density: float, saturation_mea
     if scene_rate > 0.30:
         return "movie_cinematic"
     return "tutorial"
+
+
+def _scene_threshold_for_type(video_type: str, base: float) -> float:
+    """按视频类型调整场景变化检测阈值（越大越宽松，越少检出）。"""
+    if video_type == "talking_head":
+        return 0.20      # 宽松：出镜讲解画面变化多为无意义，少产生候选
+    if video_type == "lecture_slides":
+        return 0.03      # 敏感：PPT 翻页要检出
+    if video_type == "screen_recording":
+        return 0.08
+    return base          # auto/movie_cinematic/tutorial 用配置值
 
 
 def _mean_saturation(frame_bgr) -> float:
