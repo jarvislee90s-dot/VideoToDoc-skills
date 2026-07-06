@@ -710,30 +710,56 @@ def trim_candidates_by_transcript(
         # 一张图只可能落在一个段里，所以不需要额外去重
         image_to_seg[slide.image_path] = seg_index
 
-    # 构建结果：为每个 ASR 段分配一张图
+    # 构建结果：每个 ASR 段一张图，时间范围用段边界，capture 取段末 - margin
+    margin_ms = max(0, int(settings.capture_margin_ms))
     trimmed_slides: list[Slide] = []
     for seg_index, segment in enumerate(transcript.segments):
         seg_start_ms = segment.start_ms
         seg_end_ms = segment.end_ms
-        seg_mid_ms = (seg_start_ms + seg_end_ms) // 2
+        # 段末取帧点（不早于段首）
+        end_capture_ms = max(seg_start_ms, seg_end_ms - margin_ms)
 
         if seg_index in seg_to_best_slide:
-            slide = seg_to_best_slide[seg_index]
+            src = seg_to_best_slide[seg_index]
             trimmed_slides.append(
                 Slide(
                     slide_index=len(trimmed_slides) + 1,
-                    image_path=slide.image_path,
-                    start_ms=slide.start_ms,
-                    end_ms=slide.end_ms,
-                    capture_ms=slide.capture_ms,
-                    confidence=slide.confidence,
-                    hash=slide.hash,
-                    edge_density=slide.edge_density,
-                    ocr_text=slide.ocr_text,
+                    image_path=src.image_path,
+                    start_ms=seg_start_ms,       # 段边界（不再是候选图窗口）
+                    end_ms=seg_end_ms,           # 段边界
+                    capture_ms=end_capture_ms,   # 段末 - margin
+                    confidence=src.confidence,
+                    hash=src.hash,
+                    edge_density=src.edge_density,
+                    ocr_text=src.ocr_text,
                 )
             )
-        # 无候选图的 ASR 段不补帧：auto 模式逐段补帧会导致每句一页的碎片化，
-        # 改由 align_sections 将无图段文字归并到最近的候选图所在页。
+        elif settings.video_type == "talking_head":
+            # talking_head 无候选图段 → 段末直接取帧，不再跳过
+            img_path = output_dir / f"trim_end_{seg_index:03d}_{end_capture_ms}.png"
+            extract_frame(video_path, end_capture_ms, img_path, precise=True)
+            # dhash/edge_density 可能因帧提取失败而抛异常，做防御
+            try:
+                slide_hash = f"{dhash(img_path):016x}" if img_path.exists() else "0" * 16
+            except Exception:
+                slide_hash = "0" * 16
+            try:
+                slide_edge = edge_density(img_path) if img_path.exists() else 0.0
+            except Exception:
+                slide_edge = 0.0
+            trimmed_slides.append(
+                Slide(
+                    slide_index=len(trimmed_slides) + 1,
+                    image_path=str(img_path),
+                    start_ms=seg_start_ms,
+                    end_ms=seg_end_ms,
+                    capture_ms=end_capture_ms,
+                    confidence=0.3,
+                    hash=slide_hash,
+                    edge_density=slide_edge,
+                )
+            )
+        # 非 talking_head 且无候选图：保持原行为（不补帧，由 align 归并）
 
     metadata = dict(candidates.metadata)
     metadata["trimmed_by_transcript"] = True
