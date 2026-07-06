@@ -44,6 +44,9 @@ def main() -> int:
     parser.add_argument("--different-change-threshold", type=float, default=None)
     parser.add_argument("--different-hash-threshold", type=int, default=None)
     parser.add_argument("--sync-offset-ms", type=int, default=None)
+    parser.add_argument("--video-type",
+                        choices=["auto", "lecture_slides", "talking_head", "screen_recording", "movie_cinematic", "tutorial"],
+                        default=None, help="视频类型（auto 自动判定）")
     parser.add_argument("--force-rebuild", action="append", default=[], help="可重复传入：audio/asr/slides/align/all")
     args = parser.parse_args()
 
@@ -99,6 +102,8 @@ def main() -> int:
         cmd += ["--different-hash-threshold", str(args.different_hash_threshold)]
     if args.sync_offset_ms is not None:
         cmd += ["--sync-offset-ms", str(args.sync_offset_ms)]
+    if args.video_type is not None:
+        cmd += ["--video-type", args.video_type]
     for target in args.force_rebuild:
         cmd += ["--force-rebuild", target]
 

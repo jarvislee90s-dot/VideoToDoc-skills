@@ -52,6 +52,7 @@ class Settings:
     min_segment_chars: int = 30
     max_segment_chars: int = 400
     transcript_path: str = ""
+    video_type: str = "auto"  # auto|lecture_slides|talking_head|screen_recording|movie_cinematic|tutorial
 
 
 def load_dotenv(path: Path) -> None:

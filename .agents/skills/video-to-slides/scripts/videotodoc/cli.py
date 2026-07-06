@@ -62,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--force-rebuild", action="append", default=[], help="可重复传入：audio/asr/slides/align/all")
     process.add_argument("--transcript", type=Path, default=None,
                          help="已有转录文件路径（跳过 ASR）")
+    process.add_argument("--video-type",
+                         choices=["auto", "lecture_slides", "talking_head", "screen_recording", "movie_cinematic", "tutorial"],
+                         default=None, help="视频类型（auto 自动判定）")
 
     capture = subparsers.add_parser("capture", help="截图 + ASR + 生成分段草案")
     capture.add_argument("video", type=Path)
@@ -204,6 +207,7 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         "different_change_threshold",
         "different_hash_threshold",
         "sync_offset_ms",
+        "video_type",
     ):
         value = getattr(args, field, None)
         if value is not None:
