@@ -77,3 +77,37 @@ class TestAlignSectionsWindowSplit:
         sections = align_sections(slides, transcript)
         # 第二页无对应文本
         assert "本页无讲解" in sections[1].transcript or sections[1].transcript.strip() == ""
+
+
+class TestParagraphDominantAlign:
+    def test_section_time_range_equals_segment_boundary(self):
+        """trim 产出段边界 slide 后，section 时间范围 = 段边界，capture = 段末-margin。"""
+        seg = _seg(0, 22000, "一段完整的话，讲到了末尾。")
+        transcript = Transcript(backend="reused", language="zh", segments=[seg])
+        # trim 改造后的 slide：段边界 + 段末 capture
+        slides = SlideSet(slides=[Slide(
+            slide_index=1, image_path="/tmp/1.png",
+            start_ms=0, end_ms=22000, capture_ms=21500,
+            confidence=0.8, hash="0" * 16,
+        )])
+        sections = align_sections(slides, transcript)
+        assert len(sections) == 1
+        s = sections[0]
+        assert s.start_ms == 0
+        assert s.end_ms == 22000
+        assert s.capture_ms == 21500
+        assert "末尾" in s.transcript
+
+    def test_capture_not_lands_on_middle_sentence(self):
+        """回归：capture 不再落在段落中段（旧 bug 的反例）。"""
+        seg = _seg(0, 22000, "第一句。有人299上门帮你卸载。但是我想告诉你重点。")
+        transcript = Transcript(backend="reused", language="zh", segments=[seg])
+        slides = SlideSet(slides=[Slide(
+            slide_index=1, image_path="/tmp/1.png",
+            start_ms=0, end_ms=22000, capture_ms=21500,
+            confidence=0.8, hash="0" * 16,
+        )])
+        sections = align_sections(slides, transcript)
+        # capture 在段末 21500ms，对应末句附近，不是中段「有人299」
+        assert sections[0].capture_ms == 21500
+        assert sections[0].end_ms == 22000
