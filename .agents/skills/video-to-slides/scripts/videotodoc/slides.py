@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Literal
 
 from PIL import Image, ImageFilter
 from PIL import ImageChops
@@ -16,6 +17,11 @@ from .io import read_json, write_json
 from .models import DedupeStats, Slide, SlideSet, Transcript, to_plain_dict
 from .ocr import extract_text, text_similarity
 from .utils import VideoToDocError, ms_to_seconds, run_command, seconds_to_ms
+
+
+VideoType = Literal[
+    "lecture_slides", "talking_head", "screen_recording", "movie_cinematic", "tutorial"
+]
 
 
 def detect_slides(video_path: Path, output_dir: Path, output_json: Path, settings: Settings, force: bool = False, skip_dedupe: bool = False) -> SlideSet:
@@ -157,6 +163,88 @@ def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Pa
 
     refined = [results[i] for i in range(1, len(slides) + 1)]
     return refined
+
+def _classify_by_features(scene_rate: float, edge_density: float, saturation_mean: float) -> VideoType:
+    """按场景变化率/边缘密度/饱和度判型（纯函数，便于测试）。
+
+    阈值参考 videoQuickNote classify_video，适配本项目的 detect_scene_changes 口径。
+    """
+    if scene_rate < 0.05 and edge_density > 0.15:
+        return "lecture_slides"
+    if scene_rate < 0.03 and saturation_mean < 60 and edge_density < 0.10:
+        return "talking_head"
+    if scene_rate < 0.10 and edge_density > 0.20 and saturation_mean < 80:
+        return "screen_recording"
+    if scene_rate > 0.30:
+        return "movie_cinematic"
+    return "tutorial"
+
+
+def _mean_saturation(frame_bgr) -> float:
+    """BGR 帧 → HSV 的 S 通道均值。"""
+    import cv2
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    return float(hsv[:, :, 1].mean())
+
+
+def _edge_density_from_array(frame_bgr) -> float:
+    """从 BGR numpy 数组算边缘密度（与 edge_density(path) 口径一致，复用 PIL）。"""
+    import numpy as np
+    rgb = frame_bgr[:, :, ::-1].copy()
+    image = Image.fromarray(rgb)
+    edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
+    pixels = list(edges.getdata())
+    if not pixels:
+        return 0.0
+    active = sum(1 for pixel in pixels if pixel > 32)
+    return active / len(pixels)
+
+
+def _sample_frames_for_classify(video_path: Path, n: int = 30) -> list:
+    """均匀采样 n 帧（BGR ndarray），用于分类特征计算。"""
+    import cv2
+    import numpy as np
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return []
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames <= 0:
+        cap.release()
+        return []
+    indices = np.linspace(0, total_frames - 1, n, dtype=int)
+    frames = []
+    for idx in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+        ret, frame = cap.read()
+        if ret and frame is not None:
+            frames.append(frame)
+    cap.release()
+    return frames
+
+
+def _compute_scene_rate(video_path: Path, threshold: float = 0.06) -> float:
+    """场景变化点数 / 时长（次/秒）。复用 detect_scene_changes + probe_duration_ms。"""
+    change_points = detect_scene_changes(video_path, threshold)
+    duration_ms = probe_duration_ms(video_path)
+    if duration_ms <= 0:
+        return 0.0
+    return len(change_points) / (duration_ms / 1000.0)
+
+
+def classify_video(video_path: Path) -> VideoType:
+    """采样帧 + 场景变化率 → 判定视频类型。无帧时回退 tutorial。"""
+    import numpy as np
+    frames = _sample_frames_for_classify(video_path, n=30)
+    if not frames:
+        return "tutorial"
+    edge_densities = [_edge_density_from_array(f) for f in frames]
+    saturations = [_mean_saturation(f) for f in frames]
+    scene_rate = _compute_scene_rate(video_path)
+    avg_edge = float(np.mean(edge_densities)) if edge_densities else 0.0
+    avg_sat = float(np.mean(saturations)) if saturations else 0.0
+    result = _classify_by_features(scene_rate, avg_edge, avg_sat)
+    print(f"  🎬 视频类型判定：scene_rate={scene_rate:.4f} edge={avg_edge:.4f} sat={avg_sat:.1f} → {result}")
+    return result
 
 
 def detect_scene_changes(video_path: Path, threshold: float) -> list[int]:
