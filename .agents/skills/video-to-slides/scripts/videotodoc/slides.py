@@ -166,6 +166,7 @@ def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Pa
     refined = [results[i] for i in range(1, len(slides) + 1)]
     return refined
 
+
 def _classify_by_features(scene_rate: float, edge_density: float, saturation_mean: float) -> VideoType:
     """按场景变化率/边缘密度/饱和度判型（纯函数，便于测试）。
 
@@ -202,7 +203,6 @@ def _mean_saturation(frame_bgr) -> float:
 
 def _edge_density_from_array(frame_bgr) -> float:
     """从 BGR numpy 数组算边缘密度（与 edge_density(path) 口径一致，复用 PIL）。"""
-    import numpy as np
     rgb = frame_bgr[:, :, ::-1].copy()
     image = Image.fromarray(rgb)
     edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
