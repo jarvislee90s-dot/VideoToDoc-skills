@@ -194,6 +194,41 @@ def _scene_threshold_for_type(video_type: str, base: float) -> float:
     return base          # auto/movie_cinematic/tutorial 用配置值
 
 
+def _min_slide_seconds_for_type(video_type: str, base: float) -> float:
+    """按 video_type 返回 min_slide_seconds 基线值（秒）。
+
+    talking_head 5s（人脸动作不能算换页点）
+    lecture_slides/movie_cinematic 0.5s（PPT 翻页/镜头切换快）
+    screen_recording 1s
+    其他用 base
+    """
+    if video_type == "talking_head":
+        return 5.0
+    if video_type in ("lecture_slides", "movie_cinematic"):
+        return 0.5
+    if video_type == "screen_recording":
+        return 1.0
+    return base
+
+
+def _max_candidates_for_type(video_type: str, base: int, duration_sec: float) -> int:
+    """按 video_type + duration 算候选数硬上限。
+
+    type_cap 表 + duration_factor 调整：duration_factor = max(1, duration/900)，
+    每 15 分钟候选数翻倍，达 type_cap 即封顶。
+    """
+    type_caps = {
+        "talking_head": 150,
+        "lecture_slides": 500,
+        "screen_recording": 400,
+        "movie_cinematic": 800,
+        "tutorial": 300,
+    }
+    type_cap = type_caps.get(video_type, base)
+    duration_factor = max(1.0, duration_sec / 900.0)
+    return min(type_cap, int(base * duration_factor))
+
+
 def _mean_saturation(frame_bgr) -> float:
     """BGR 帧 → HSV 的 S 通道均值。"""
     import cv2
