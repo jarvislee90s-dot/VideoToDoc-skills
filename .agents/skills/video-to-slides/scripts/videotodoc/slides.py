@@ -294,6 +294,28 @@ def _pick_main_candidate(slides, seg_text: str, edge_weight: float, ocr_weight: 
     return max(slides, key=lambda s: _score_candidate(s, seg_text, max_edge, edge_weight, ocr_weight))
 
 
+def _build_image_name(
+    seg_index: int,
+    intra_index: int,
+    capture_ms: int,
+    is_main: bool,
+    single: bool = False,
+) -> str:
+    """生成图片文件名：p{NN}_{MM}_{X.Ys}[_main].png
+
+    - seg_index: 0-based 段号（输出时 +1）
+    - intra_index: 0-based 段内顺序（输出时 +1）
+    - capture_ms: 截图时刻毫秒
+    - is_main: 是否主图
+    - single: 段内仅 1 张时（不强制加 _main 后缀以保持简洁）
+    """
+    seg_n = f"{seg_index + 1:02d}"
+    intra_n = f"{intra_index + 1:02d}"
+    seconds = capture_ms / 1000.0
+    main_part = "_main" if (is_main and not single) else ""
+    return f"p{seg_n}_{intra_n}{main_part}_{seconds:.1f}s.png"
+
+
 def _mean_saturation(frame_bgr) -> float:
     """BGR 帧 → HSV 的 S 通道均值。"""
     import cv2
