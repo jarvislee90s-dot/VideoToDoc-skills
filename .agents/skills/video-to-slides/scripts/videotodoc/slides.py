@@ -312,8 +312,14 @@ def _build_image_name(
     seg_n = f"{seg_index + 1:02d}"
     intra_n = f"{intra_index + 1:02d}"
     seconds = capture_ms / 1000.0
-    main_part = "_main" if (is_main and not single) else ""
-    return f"p{seg_n}_{intra_n}{main_part}_{seconds:.1f}s.png"
+    # 后缀规则（按 spec 4.6）：主图 _main，候选 _cand，单图无后缀
+    if is_main and not single:
+        suffix = "_main"
+    elif not is_main and not single:
+        suffix = "_cand"
+    else:
+        suffix = ""
+    return f"p{seg_n}_{intra_n}{suffix}_{seconds:.1f}s.png"
 
 
 def capture_frames_opencv(

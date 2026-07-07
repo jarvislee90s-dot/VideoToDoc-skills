@@ -10,9 +10,9 @@ def test_build_image_name_main() -> None:
 
 def test_build_image_name_candidate() -> None:
     from videotodoc.slides import _build_image_name
-    # 段 12, 段内第 3 个, capture @ 449.1s, 候选
+    # 段 12, 段内第 3 个, capture @ 449.1s, 候选（按 spec 4.6 加 _cand 后缀）
     assert _build_image_name(seg_index=11, intra_index=2, capture_ms=449100, is_main=False) \
-        == "p12_03_449.1s.png"
+        == "p12_03_cand_449.1s.png"
 
 
 def test_build_image_name_single_no_suffix() -> None:

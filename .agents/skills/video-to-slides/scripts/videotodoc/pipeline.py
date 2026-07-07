@@ -503,9 +503,14 @@ def materialize_selected_slides(slides: SlideSet, output_dir: Path) -> SlideSet:
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    semantic_pattern = re.compile(r"^p\d{2}_\d{2}(?:_main|_cand)?_\d+\.\d+s\.png$")
     for index, slide in enumerate(slides.slides, start=1):
         source = Path(slide.image_path)
-        target = output_dir / f"{index:04d}{source.suffix or '.png'}"
+        # 保留 trim 阶段生成的语义命名（spec 4.6），否则用顺序编号
+        if semantic_pattern.match(source.name):
+            target = output_dir / source.name
+        else:
+            target = output_dir / f"{index:04d}{source.suffix or '.png'}"
         if source.resolve() != target.resolve():
             shutil.copy2(source, target)
         slide.slide_index = index
