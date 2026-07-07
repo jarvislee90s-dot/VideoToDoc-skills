@@ -229,6 +229,15 @@ def _max_candidates_for_type(video_type: str, base: int, duration_sec: float) ->
     return min(type_cap, int(base * duration_factor))
 
 
+def _match_window(seg_start_ms: int, seg_end_ms: int, window_ms: int) -> tuple[int, int]:
+    """段匹配窗口 [max(seg_start, seg_end - W), seg_end) 左闭右开。
+
+    段长 < W 时自然回退到 [seg_start, seg_end)（不超段首）。
+    """
+    match_start = max(seg_start_ms, seg_end_ms - window_ms)
+    return (match_start, seg_end_ms)
+
+
 def _mean_saturation(frame_bgr) -> float:
     """BGR 帧 → HSV 的 S 通道均值。"""
     import cv2
