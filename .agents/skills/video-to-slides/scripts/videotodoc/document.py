@@ -19,7 +19,11 @@ def render_original_markdown(title: str, sections: list[Section], output_path: P
                 "",
                 f"时间：{_format_ms(section.start_ms)} - {_format_ms(section.end_ms)}",
                 "",
-                f"![第 {section.slide_index} 页]({_markdown_image_path(section.image_path, output_path.parent)})",
+                # 多图按 capture_ms 时间顺序渲染（image_paths 已按时间升序，主图带 _main 标记）
+                *[
+                    f"![{Path(p).stem}]({_markdown_image_path(p, output_path.parent)})"
+                    for p in (section.image_paths or [section.image_path])
+                ],
                 "",
                 section.transcript.strip() or "本页无讲解。",
                 "",
