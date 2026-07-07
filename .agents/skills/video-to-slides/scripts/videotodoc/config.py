@@ -29,7 +29,7 @@ class Settings:
     hash_threshold: int = 8
     stability_window_seconds: float = 1.0
     refine_fps: int = 8
-    min_slide_seconds: float = 1.5
+    min_slide_seconds: float = 1.0  # 最小换页点间隔秒数（4.1 节基线）
     capture_margin_ms: int = 500
     frame_drift_back_seconds: float = 2.0
     min_edge_density: float = 0.02
@@ -53,6 +53,19 @@ class Settings:
     max_segment_chars: int = 400
     transcript_path: str = ""
     video_type: str = "auto"  # auto|lecture_slides|talking_head|screen_recording|movie_cinematic|tutorial
+
+    # 4.1 节：detect 阶段硬上限
+    max_candidates: int = 200  # 单视频最大候选数（硬上限，按 video_type 自动调）
+    # 4.2 节：匹配窗口
+    match_window_sec: float | None = None  # None = 按 video_type 自动
+    # 4.4 节：段内多候选
+    keep_all_segment_candidates: bool = False
+    # 4.5 节：主图评分权重
+    main_score_edge_weight: float = 0.5
+    main_score_ocr_weight: float = 0.5
+    # 4.8 节：opencv 批量截图
+    use_opencv_capture: bool = True
+    detect_workers: int = 8
 
 
 def load_dotenv(path: Path) -> None:
