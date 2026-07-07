@@ -96,8 +96,8 @@ class TestTrimParagraphDominant:
         # 段边界，不是候选图窗口
         assert s.start_ms == 0
         assert s.end_ms == 22000
-        # capture 在段末 - margin
-        assert s.capture_ms == 22000 - 500
+        # capture 保留原始候选图截图时刻（新行为：不再覆盖为段末-margin）
+        assert s.capture_ms == 15000
 
     def test_talking_head_no_candidate_extracts_end_frame(self, tmp_path, monkeypatch):
         """talking_head 段内无候选图 → 段末取帧，不再跳过。"""

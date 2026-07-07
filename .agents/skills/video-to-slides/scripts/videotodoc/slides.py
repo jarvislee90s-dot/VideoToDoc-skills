@@ -838,101 +838,138 @@ def trim_candidates_by_transcript(
     output_dir: Path,
     settings: Settings,
 ) -> SlideSet:
-    """双向去重：按 ASR 段与候选图的时间轴对齐。
+    """按 [Y-W, Y) 窗口选择候选，keep_all 时保留段内全部（按时间顺序），主图评分最高加 _main 标记。
 
-    方向 A（一段话多图 → 留最后一张）：
-        同一 ASR 段内可能有多张候选图，只保留 capture_ms 最大的那张。
-
-    方向 B（一张图多段话 → 归到 capture_ms 所在的那段）：
-        每张图只有一个 capture_ms 时间点，它落在哪个 ASR 段的
-        [start_ms, end_ms) 区间，就只归属那一段。后续 align_sections
-        只把该段文字匹配给这张图，不会出现同一段文字出现在多页的情况。
-
-    无图可匹配的 ASR 段：在中点自动提取一帧。
+    方向 A（一段话多图）：
+        - keep_all=False：选评分最高者 1 张作为主图
+        - keep_all=True：段内所有候选都保留，按时间顺序排列
+    方向 B（一张图多段话）：
+        - 一张图只归属到一个段（左闭右开天然不重叠）
+    段末取帧：talking_head 无候选时 extract_frame 补帧
     """
     if not transcript.segments:
         return candidates
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 方向 A：每个 ASR 段内只保留 capture_ms 最大的候选图
-    seg_to_best_slide: dict[int, Slide] = {}
-    for seg_index, segment in enumerate(transcript.segments):
-        seg_start_ms = segment.start_ms
-        seg_end_ms = segment.end_ms
-        matching = [
-            slide for slide in candidates.slides
-            if seg_start_ms <= slide.capture_ms < seg_end_ms
-        ]
-        if matching:
-            seg_to_best_slide[seg_index] = max(matching, key=lambda s: s.capture_ms)
+    window_ms = int((settings.match_window_sec or 5) * 1000)
 
-    # 方向 B：每张图只归属到 capture_ms 落在的那一段（自然满足，因为一张图只有一个 capture_ms）
-    # 但多段可能选了同一张图，此时需要去重：该图只保留在 capture_ms 所在的段
-    # 先按 capture_ms 归属做一次反向映射
-    image_to_seg: dict[str, int] = {}
-    for seg_index, slide in seg_to_best_slide.items():
-        # 同一张图如果被多个段选中，只保留 capture_ms 准确落在的那一段
-        # 由于上面的匹配逻辑是 seg_start <= capture < seg_end，
-        # 一张图只可能落在一个段里，所以不需要额外去重
-        image_to_seg[slide.image_path] = seg_index
-
-    # 构建结果：每个 ASR 段一张图，时间范围用段边界，capture 取段末 - margin
-    margin_ms = max(0, int(settings.capture_margin_ms))
     trimmed_slides: list[Slide] = []
     for seg_index, segment in enumerate(transcript.segments):
         seg_start_ms = segment.start_ms
         seg_end_ms = segment.end_ms
-        # 段末取帧点（不早于段首）
-        end_capture_ms = max(seg_start_ms, seg_end_ms - margin_ms)
+        match_start, match_end = _match_window(seg_start_ms, seg_end_ms, window_ms)
 
-        if seg_index in seg_to_best_slide:
-            src = seg_to_best_slide[seg_index]
-            trimmed_slides.append(
-                Slide(
-                    slide_index=len(trimmed_slides) + 1,
-                    image_path=src.image_path,
-                    start_ms=seg_start_ms,       # 段边界（不再是候选图窗口）
-                    end_ms=seg_end_ms,           # 段边界
-                    capture_ms=end_capture_ms,   # 段末 - margin
-                    confidence=src.confidence,
-                    hash=src.hash,
-                    edge_density=src.edge_density,
-                    ocr_text=src.ocr_text,
-                )
-            )
-        elif settings.video_type == "talking_head":
-            # talking_head 无候选图段 → 段末直接取帧，不再跳过
-            img_path = output_dir / f"trim_end_{seg_index:03d}_{end_capture_ms}.png"
-            extract_frame(video_path, end_capture_ms, img_path, precise=True)
-            # dhash/edge_density 可能因帧提取失败而抛异常，做防御
-            try:
-                slide_hash = f"{dhash(img_path):016x}" if img_path.exists() else "0" * 16
-            except Exception:
-                slide_hash = "0" * 16
-            try:
-                slide_edge = edge_density(img_path) if img_path.exists() else 0.0
-            except Exception:
-                slide_edge = 0.0
-            trimmed_slides.append(
-                Slide(
-                    slide_index=len(trimmed_slides) + 1,
+        if settings.keep_all_segment_candidates:
+            # keep_all：段内所有候选（左闭右开天然不重叠）
+            matching = [
+                slide for slide in candidates.slides
+                if seg_start_ms <= slide.capture_ms < seg_end_ms
+            ]
+        else:
+            # 默认：优先 [Y-W, Y) 窗口内的候选，窗口为空时回退全段
+            matching = [
+                slide for slide in candidates.slides
+                if match_start <= slide.capture_ms < match_end
+            ]
+            if not matching:
+                matching = [
+                    slide for slide in candidates.slides
+                    if seg_start_ms <= slide.capture_ms < seg_end_ms
+                ]
+
+        if not matching:
+            if settings.video_type == "talking_head":
+                # talking_head 无候选时段末补帧
+                end_capture_ms = max(seg_start_ms, seg_end_ms - 500)
+                img_path = output_dir / f"trim_end_{seg_index:03d}_{end_capture_ms}.png"
+                extract_frame(video_path, end_capture_ms, img_path, precise=True)
+                try:
+                    slide_hash = f"{dhash(img_path):016x}" if img_path.exists() else "0" * 16
+                except Exception:
+                    slide_hash = "0" * 16
+                try:
+                    slide_edge = edge_density(img_path) if img_path.exists() else 0.0
+                except Exception:
+                    slide_edge = 0.0
+                matching = [Slide(
+                    slide_index=seg_index + 1,
                     image_path=str(img_path),
-                    start_ms=seg_start_ms,
-                    end_ms=seg_end_ms,
-                    capture_ms=end_capture_ms,
-                    confidence=0.3,
-                    hash=slide_hash,
-                    edge_density=slide_edge,
-                )
+                    start_ms=seg_start_ms, end_ms=seg_end_ms,
+                    capture_ms=end_capture_ms, confidence=0.3,
+                    hash=slide_hash, edge_density=slide_edge,
+                )]
+            else:
+                continue  # 非 talking_head 且无候选：跳过（由 align 归并）
+
+        # 按时间顺序排序
+        matching.sort(key=lambda s: s.capture_ms)
+
+        if settings.keep_all_segment_candidates:
+            # 保留全部：每张都生成 trimmed slide，主图加 _main 标记
+            main_slide = _pick_main_candidate(
+                matching, segment.text,
+                settings.main_score_edge_weight, settings.main_score_ocr_weight,
             )
-        # 非 talking_head 且无候选图：保持原行为（不补帧，由 align 归并）
+            for intra_idx, slide in enumerate(matching):
+                is_main = slide is main_slide
+                new_name = _build_image_name(
+                    seg_index=seg_index,
+                    intra_index=intra_idx,
+                    capture_ms=slide.capture_ms,
+                    is_main=is_main,
+                    single=False,
+                )
+                old_path = Path(slide.image_path)
+                new_path = output_dir / new_name
+                if old_path.exists() and old_path != new_path:
+                    try:
+                        if new_path.exists():
+                            new_path.unlink()
+                        new_path.hardlink_to(old_path.resolve())
+                    except OSError:
+                        shutil.copy2(str(old_path), str(new_path))
+                trimmed_slides.append(Slide(
+                    slide_index=len(trimmed_slides) + 1,
+                    image_path=str(new_path) if new_path.exists() else slide.image_path,
+                    start_ms=seg_start_ms, end_ms=seg_end_ms,
+                    capture_ms=slide.capture_ms, confidence=slide.confidence,
+                    hash=slide.hash, edge_density=slide.edge_density,
+                    ocr_text=slide.ocr_text,
+                ))
+        else:
+            # 默认：选评分最高者 1 张
+            main_slide = _pick_main_candidate(
+                matching, segment.text,
+                settings.main_score_edge_weight, settings.main_score_ocr_weight,
+            )
+            new_name = _build_image_name(
+                seg_index=seg_index, intra_index=0,
+                capture_ms=main_slide.capture_ms, is_main=True, single=True,
+            )
+            old_path = Path(main_slide.image_path)
+            new_path = output_dir / new_name
+            if old_path.exists() and old_path != new_path:
+                try:
+                    if new_path.exists():
+                        new_path.unlink()
+                    new_path.hardlink_to(old_path.resolve())
+                except OSError:
+                    shutil.copy2(str(old_path), str(new_path))
+            trimmed_slides.append(Slide(
+                slide_index=len(trimmed_slides) + 1,
+                image_path=str(new_path) if new_path.exists() else main_slide.image_path,
+                start_ms=seg_start_ms, end_ms=seg_end_ms,
+                capture_ms=main_slide.capture_ms, confidence=main_slide.confidence,
+                hash=main_slide.hash, edge_density=main_slide.edge_density,
+                ocr_text=main_slide.ocr_text,
+            ))
 
     metadata = dict(candidates.metadata)
     metadata["trimmed_by_transcript"] = True
     metadata["segment_count"] = len(transcript.segments)
     metadata["trimmed_slide_count"] = len(trimmed_slides)
-
+    metadata["keep_all_segment_candidates"] = settings.keep_all_segment_candidates
     return SlideSet(slides=trimmed_slides, metadata=metadata)
 
 
