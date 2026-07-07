@@ -238,6 +238,31 @@ def _match_window(seg_start_ms: int, seg_end_ms: int, window_ms: int) -> tuple[i
     return (match_start, seg_end_ms)
 
 
+_PUNCT_PATTERN = re.compile(r"[\s，。！？、；：\"\"''（）()\.\,\!\?\;\:]")
+
+
+def _extract_keywords(text: str) -> set[str]:
+    """从文本提取字符 bigram 集合（去标点）。短文本（<2 字符）返回空集。"""
+    cleaned = _PUNCT_PATTERN.sub("", text or "").strip()
+    if len(cleaned) < 2:
+        return set()
+    return {cleaned[i:i + 2] for i in range(len(cleaned) - 1)}
+
+
+def _ocr_keyword_overlap(seg_text: str, ocr_text: str | None) -> float:
+    """seg 与 ocr 关键词 Jaccard 重叠比 = |seg_kw ∩ ocr_kw| / |seg_kw|。
+
+    OCR 为空或 seg 为空时返回 0.0。
+    """
+    if not seg_text or not ocr_text:
+        return 0.0
+    seg_kw = _extract_keywords(seg_text)
+    ocr_kw = _extract_keywords(ocr_text)
+    if not seg_kw or not ocr_kw:
+        return 0.0
+    return len(seg_kw & ocr_kw) / len(seg_kw)
+
+
 def _mean_saturation(frame_bgr) -> float:
     """BGR 帧 → HSV 的 S 通道均值。"""
     import cv2
