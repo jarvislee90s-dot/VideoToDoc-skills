@@ -263,6 +263,37 @@ def _ocr_keyword_overlap(seg_text: str, ocr_text: str | None) -> float:
     return len(seg_kw & ocr_kw) / len(seg_kw)
 
 
+def _score_candidate(
+    slide,  # Slide 实例（有 edge_density, ocr_text 属性）
+    seg_text: str,
+    max_edge_in_seg: float,
+    edge_weight: float = 0.5,
+    ocr_weight: float = 0.5,
+) -> float:
+    """主图评分 = edge_weight * edge_normalized + ocr_weight * ocr_keyword_overlap。
+
+    edge_normalized = slide.edge_density / max(max_edge_in_seg, 1e-6)
+    """
+    edge = float(getattr(slide, "edge_density", 0.0) or 0.0)
+    edge_normalized = edge / max(max_edge_in_seg, 1e-6)
+    ocr = getattr(slide, "ocr_text", "") or ""
+    ocr_overlap = _ocr_keyword_overlap(seg_text, ocr)
+    return edge_weight * edge_normalized + ocr_weight * ocr_overlap
+
+
+def _pick_main_candidate(slides, seg_text: str, edge_weight: float, ocr_weight: float):
+    """从候选 slides 中选评分最高者作为主图。
+
+    空列表抛 ValueError。单元素直接返回。
+    """
+    if not slides:
+        raise ValueError("候选列表为空，无法选取主图")
+    if len(slides) == 1:
+        return slides[0]
+    max_edge = max(float(getattr(s, "edge_density", 0.0) or 0.0) for s in slides)
+    return max(slides, key=lambda s: _score_candidate(s, seg_text, max_edge, edge_weight, ocr_weight))
+
+
 def _mean_saturation(frame_bgr) -> float:
     """BGR 帧 → HSV 的 S 通道均值。"""
     import cv2
