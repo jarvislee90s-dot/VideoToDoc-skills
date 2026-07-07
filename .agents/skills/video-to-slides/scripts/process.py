@@ -55,6 +55,8 @@ def main() -> int:
                         help="最小换页点间隔秒数（默认按 video_type 自动）")
     parser.add_argument("--no-opencv-capture", action="store_true",
                         help="禁用 opencv 批量截图，回退 ffmpeg")
+    parser.add_argument("--detect-workers", type=int, default=None,
+                        help="候选图截图并行线程数（默认 8）")
     parser.add_argument("--force-rebuild", action="append", default=[], help="可重复传入：audio/asr/slides/align/all")
     args = parser.parse_args()
 
@@ -120,6 +122,8 @@ def main() -> int:
         cmd += ["--min-slide-seconds", str(args.min_slide_seconds)]
     if args.no_opencv_capture:
         cmd.append("--no-opencv-capture")
+    if args.detect_workers is not None:
+        cmd += ["--detect-workers", str(args.detect_workers)]
     for target in args.force_rebuild:
         cmd += ["--force-rebuild", target]
 

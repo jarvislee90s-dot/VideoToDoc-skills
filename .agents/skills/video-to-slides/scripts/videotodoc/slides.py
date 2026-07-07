@@ -42,13 +42,24 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
     run_dir = output_dir.parent
     candidates_dir = run_dir / "slide_candidates"
     duration_ms = probe_duration_ms(video_path)
+    duration_sec = duration_ms / 1000.0
     # 按视频类型调整场景检测阈值（auto 时用 settings.scene_threshold）
     scene_threshold = _scene_threshold_for_type(settings.video_type, settings.scene_threshold)
     change_points = detect_scene_changes(video_path, scene_threshold)
     candidate_points = _candidate_points(change_points, duration_ms, settings)
+    # G2: 候选点硬上限保护（动态调整后一般不会超，但作为安全网）
+    max_caps = _max_candidates_for_type(settings.video_type, settings.max_candidates, duration_sec)
+    if len(candidate_points) > max_caps and max_caps > 0:
+        step = len(candidate_points) / max_caps
+        candidate_points = [candidate_points[int(i * step)] for i in range(max_caps)]
     if settings.capture_mode in {"fine", "audit", "complete"}:
         write_candidate_audit(video_path, candidate_points, candidates_dir, run_dir / "slide_candidates.html", settings)
-    boundaries = _build_boundaries(candidate_points, duration_ms, settings.min_slide_seconds)
+    # G1: 按 video_type 取基线；G3: 动态调整（确保候选数不超 max_caps）
+    base_min_slide = _min_slide_seconds_for_type(settings.video_type, settings.min_slide_seconds)
+    min_slide_seconds = _dynamic_min_slide_seconds(
+        settings.video_type, base_min_slide, duration_sec, max_caps
+    )
+    boundaries = _build_boundaries(candidate_points, duration_ms, min_slide_seconds)
     keep_all = settings.capture_mode == "complete" or settings.keep_all_candidates or skip_dedupe
 
     slides: list[Slide] = []
@@ -65,9 +76,21 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
         ed = edge_density(candidate_path)
         return (idx, start_ms, end_ms, candidate_path, image_hash, ed)
 
+    # G6: opencv 批量截候选（按 spec 4.8），失败时回退 ffmpeg
+    if settings.use_opencv_capture:
+        try:
+            capture_frames_opencv(
+                video_path,
+                [_candidate_capture_ms(s, e, settings) for s, e in boundaries],
+                candidates_dir,
+                name_template="candidate_{ms}.png",
+            )
+        except Exception:
+            pass  # 回退到 _extract_candidate 里的 extract_frame
+
     task_args = [(i, s, e) for i, (s, e) in enumerate(boundaries)]
     precomputed: dict[int, tuple[int, int, Path, int, float]] = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, int(settings.detect_workers))) as executor:
         futures = {executor.submit(_extract_candidate, arg): arg[0] for arg in task_args}
         for future in as_completed(futures):
             idx, start_ms, end_ms, candidate_path, image_hash, ed = future.result()
@@ -227,6 +250,48 @@ def _max_candidates_for_type(video_type: str, base: int, duration_sec: float) ->
     type_cap = type_caps.get(video_type, base)
     duration_factor = max(1.0, duration_sec / 900.0)
     return min(type_cap, int(base * duration_factor))
+
+
+# Spec 4.1.5: 每秒变化点密度（用于动态调整 min_slide_seconds）
+_TYPE_DENSITY: dict[str, float] = {
+    "talking_head": 0.2,
+    "lecture_slides": 1.5,
+    "screen_recording": 1.0,
+    "movie_cinematic": 3.0,
+    "tutorial": 0.8,
+}
+
+
+def _dynamic_min_slide_seconds(
+    video_type: str, base: float, duration_sec: float, max_candidates: int
+) -> float:
+    """Spec 4.1.5: 动态调整 min_slide_seconds。
+
+    estimated = duration_sec * type_density
+    若 estimated > max_candidates，则 dynamic = estimated / max_candidates
+    最终 = max(base, dynamic)，且 ≤ duration_sec * 0.5（边界保护）
+    """
+    type_density = _TYPE_DENSITY.get(video_type, 1.0)
+    estimated = duration_sec * type_density
+    if estimated > max_candidates and max_candidates > 0:
+        dynamic = estimated / max_candidates
+    else:
+        dynamic = base
+    adjusted = max(base, dynamic)
+    boundary = duration_sec * 0.5
+    return min(adjusted, boundary)
+
+
+def _match_window_sec_for_type(video_type: str) -> float:
+    """Spec 4.2/4.11: 按 video_type 返回匹配窗口秒数。
+
+    talking_head 8s / lecture_slides 3s / screen_recording 3s / 其它 5s
+    """
+    if video_type == "talking_head":
+        return 8.0
+    if video_type in ("lecture_slides", "screen_recording"):
+        return 3.0
+    return 5.0  # movie_cinematic / tutorial / auto / default
 
 
 def _match_window(seg_start_ms: int, seg_end_ms: int, window_ms: int) -> tuple[int, int]:
@@ -471,13 +536,19 @@ def write_candidate_audit(
 
 
 def _candidate_image_path(candidates_dir: Path, candidate_points: list[int], point: int) -> Path:
+    """Spec 4.8: 兼容两种命名（ffmpeg: candidate_{idx:04d}_{ms}.png / opencv: candidate_{ms}.png）。"""
     try:
         index = candidate_points.index(point) + 1
     except ValueError:
         index = 0
-    if index:
-        return candidates_dir / f"candidate_{index:04d}_{point}.png"
-    return candidates_dir / f"candidate_{point}.png"
+    candidates = [
+        candidates_dir / f"candidate_{index:04d}_{point}.png",  # ffmpeg 命名
+        candidates_dir / f"candidate_{point}.png",              # opencv 命名
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return candidates[0]
 
 
 def _candidate_capture_ms(start_ms: int, end_ms: int, settings: Settings) -> int:
@@ -858,7 +929,11 @@ def trim_candidates_by_transcript(
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    window_ms = int((settings.match_window_sec or 5) * 1000)
+    if settings.match_window_sec is not None:
+        window_sec = float(settings.match_window_sec)
+    else:
+        window_sec = _match_window_sec_for_type(settings.video_type)
+    window_ms = int(window_sec * 1000)
 
     trimmed_slides: list[Slide] = []
     for seg_index, segment in enumerate(transcript.segments):

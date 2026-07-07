@@ -73,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
                          help="最小换页点间隔秒数（默认按 video_type 自动）")
     process.add_argument("--no-opencv-capture", action="store_true",
                          help="禁用 opencv 批量截图，回退 ffmpeg")
+    process.add_argument("--detect-workers", type=int, default=None,
+                         help="候选图截图并行线程数（默认 8）")
 
     capture = subparsers.add_parser("capture", help="截图 + ASR + 生成分段草案")
     capture.add_argument("video", type=Path)
@@ -219,6 +221,7 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         "max_candidates",
         "match_window_sec",
         "min_slide_seconds",
+        "detect_workers",
     ):
         value = getattr(args, field, None)
         if value is not None:
