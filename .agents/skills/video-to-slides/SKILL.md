@@ -276,6 +276,12 @@ python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标
 | `--no-ocr-dedupe` | 关闭 | 关闭 OCR 辅助去重（默认开启） |
 | `--video-type` | `auto` | 视频类型：auto/lecture_slides/talking_head/screen_recording/movie_cinematic/tutorial |
 | `--sync-offset-ms` | `None` | 时间偏移修正（毫秒） |
+| `--max-candidates` | `200` | 单视频最大候选数（硬上限，按 video_type 自动调） |
+| `--match-window-sec` | 按 video_type | 匹配窗口秒数：talking_head 8 / lecture 3 / screen 3 / others 5 |
+| `--scene-threshold` | 按 video_type | ffmpeg scene 阈值：talking_head 0.20 / lecture 0.03 / screen 0.08 / others 0.06 |
+| `--min-slide-seconds` | 按 video_type | 最小换页点间隔：talking_head 5.0 / lecture 0.5 / screen 1.0 / others 1.0 |
+| `--keep-all-candidates` | 关 | 段内保留所有候选换页点（按时间顺序，主图加 _main 标记） |
+| `--no-opencv-capture` | 开 | 关闭后候选图阶段回退 ffmpeg（默认 opencv 批量） |
 | `--force-rebuild` | `[]` | 重跑步骤：audio/asr/slides/align/mindmap |
 
 ---
@@ -287,6 +293,8 @@ python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标
 3. **不确定**：调用 OCR；文本相似度 `>= 0.92` 且变化面积 `< 0.12` → 重复，否则保留
 
 不要对全部候选图全量 OCR。白底 PPT 容易误合并，OCR 去重默认开启；如需关闭用 `--no-ocr-dedupe`。
+
+**多图一段**（`--keep-all-candidates` 开启时）：每段内所有换页点都生成图，按时间顺序排列，主图（edge + OCR 关键词加权评分最高）加 `_main` 标记。
 
 ---
 
