@@ -316,6 +316,38 @@ def _build_image_name(
     return f"p{seg_n}_{intra_n}{main_part}_{seconds:.1f}s.png"
 
 
+def capture_frames_opencv(
+    video_path: Path,
+    timestamps_ms: list[int],
+    output_dir: Path,
+    name_template: str = "frame_{ms:07d}.png",
+) -> dict[int, Path]:
+    """用 opencv VideoCapture 批量截取视频帧。返回 {ms: image_path}。
+
+    优势：一次 VideoCapture 打开，多次 read，10-20ms/帧。
+    劣势：seek 精度不如 ffmpeg precise=True（最终入选 slide 仍用 ffmpeg 重截）。
+    """
+    import cv2
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"无法打开视频：{video_path}")
+
+    results: dict[int, Path] = {}
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for ms in timestamps_ms:
+        cap.set(cv2.CAP_PROP_POS_MSEC, ms)
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        out_path = output_dir / name_template.format(ms=ms)
+        cv2.imwrite(str(out_path), frame)
+        results[ms] = out_path
+
+    cap.release()
+    return results
+
+
 def _mean_saturation(frame_bgr) -> float:
     """BGR 帧 → HSV 的 S 通道均值。"""
     import cv2
