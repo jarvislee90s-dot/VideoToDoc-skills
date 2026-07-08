@@ -15,24 +15,30 @@ import sys
 from pathlib import Path
 
 
-def extract_images_from_compact(compact_path: Path) -> dict[int, str]:
-    """从紧凑版提取每页的图片路径。"""
+def extract_images_from_compact(compact_path: Path) -> dict[int, list[str]]:
+    """从紧凑版提取每页的所有图片路径（按时间顺序）。"""
     text = compact_path.read_text(encoding="utf-8")
-    images: dict[int, str] = {}
-    # 匹配 ### 第 N 页 和下面的 ![第 N 页](path)
+    images: dict[int, list[str]] = {}
+    # 匹配 ### 第 N 页 后面紧跟的连续图片行
     page_pattern = re.compile(
-        r"### 第 (\d+) 页.*?\n\n!\[.*?\]\((.+?)\)",
+        r"### 第 (\d+) 页.*?\n\n((?:!\[.*?\]\(.+?\)\n)+)",
         re.DOTALL,
     )
     for match in page_pattern.finditer(text):
         slide_index = int(match.group(1))
-        image_path = match.group(2)
-        images[slide_index] = image_path
+        image_block = match.group(2)
+        image_paths = re.findall(r"!\[.*?\]\((.+?)\)", image_block)
+        images[slide_index] = image_paths
     return images
 
 
 def restore_images(compact_path: Path, semantic_path: Path) -> Path:
-    """用紧凑版的图片路径替换整理版中的占位符。"""
+    """用紧凑版的图片路径替换整理版中的占位符。
+
+    支持新旧两种占位符：
+    - 新格式：<!-- IMAGE:N-M[:main] -->（N=页码，M=段内序号）
+    - 旧格式：<!-- IMAGE:N -->（单图，兼容）
+    """
     if not semantic_path.exists():
         raise FileNotFoundError(f"整理版不存在：{semantic_path}")
     if not compact_path.exists():
@@ -46,18 +52,32 @@ def restore_images(compact_path: Path, semantic_path: Path) -> Path:
     text = semantic_path.read_text(encoding="utf-8")
     original = text
 
-    # 替换 <!-- IMAGE:N --> 占位符为实际图片
-    for slide_index, image_path in images.items():
+    # 替换新格式占位符 <!-- IMAGE:N-M[:main] -->
+    new_placeholder = re.compile(r"<!-- IMAGE:(\d+)-(\d+)(?::main)? -->")
+
+    def _replace_new(match: re.Match) -> str:
+        slide_index = int(match.group(1))
+        intra_idx = int(match.group(2))
+        paths = images.get(slide_index, [])
+        if 0 < intra_idx <= len(paths):
+            return f"![第 {slide_index} 页]({paths[intra_idx - 1]})"
+        return match.group(0)
+
+    text = new_placeholder.sub(_replace_new, text)
+
+    # 兼容旧格式 <!-- IMAGE:N -->（单图，取第一张）
+    for slide_index, paths in images.items():
+        if not paths:
+            continue
         placeholder = f"<!-- IMAGE:{slide_index} -->"
-        image_line = f"![第 {slide_index} 页]({image_path})"
+        image_line = f"![第 {slide_index} 页]({paths[0]})"
         if placeholder in text:
             text = text.replace(placeholder, image_line)
             print(f"  ✅ 恢复第 {slide_index} 页图片")
         else:
-            # 如果占位符已被删除，尝试在对应页码后插入图片
+            # 占位符已被删除时尝试在页码后插入
             page_header = f"### 第 {slide_index} 页"
             if page_header in text and image_line not in text:
-                # 在页码行后插入图片
                 pattern = re.compile(
                     rf"({re.escape(page_header)}.*?\n)\n",
                     re.DOTALL,

@@ -10,6 +10,7 @@
 - ✨ **语义整理** - Agent 将口语化讲稿改写为书面表达
 - 🧠 **思维导图** - Mermaid 格式 + PNG 渲染
 - 📄 **多格式输出** - 3 份 Markdown + 2 份 Word
+- 🖼️ **多图模式** - `--keep-all-candidates` 启用后段内所有候选换页点的截图都保留在同一页（按 `capture_ms` 升序排，文字不拆分），适合需要看全每段画面变化点的场景
 
 ## 工作流程
 
@@ -46,9 +47,10 @@ video-summary   │
                 ▼
           finalize
           图文对齐 + 讲义MD
-          （跨段截图按区间
-           切分文本，句末标点
-           回溯断句）
+          （按段合页：capture 落段末选图；
+           多图段保持 30 页，整段文字归主图，
+           其余图按 capture_ms 时间顺序附在同一页，
+           不切分文字）
                 │
                 ▼
           ┌─────────────┐
@@ -126,6 +128,14 @@ python3 scripts/finalize.py "runs/<视频标题>_<时间戳>"
 
 # 手工修改思维导图后单独刷新
 python3 scripts/render_mindmap.py "runs/<视频标题>_<时间戳>"
+
+# 多图模式：段内所有候选换页点都生成图，按 capture_ms 时间顺序排同一页（分页不变）
+# 需要重新截图时加 --force-rebuild slides，传 transcript_merged.json 复用合并转录后产物
+python3 scripts/process.py \
+  "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
+  --transcript "runs/<视频标题>_<时间戳>/transcript_merged.json" \
+  --keep-all-candidates --force-rebuild slides \
+  --run-dir "runs/<视频标题>_<时间戳>"
 ```
 
 ## 文件结构
@@ -141,8 +151,15 @@ video-to-slides/
 │   ├── restore_images.py  # 语义整理后恢复图片（finalize.py 内部调用）
 │   ├── _project.py        # 项目路径定位
 │   └── tests/             # 文档断言脚本（check_skill_md_5_6 等）
-├── videotodoc/            # 核心包（pipeline/align/slides/mindmap/document）
-│   └── tests/             # 单元测试
+├── reference/            # 阶段 0 合并流程 + Review Agent prompt
+│   ├── merge_procedure.md       # 合并碎段完整流程（review ≤ 2 + check_report 闸口）
+│   └── review_agent_prompt.md   # Review Agent 双路径 prompt 模板
+├── videotodoc/            # 核心包（pipeline/align/slides/mindmap/document + merge 脚本）
+│   ├── prepare_merge.py         # 合并段落数据准备 → merge_input.json
+│   ├── apply_merge.py           # 应用合并结果 → transcript_merged.json
+│   ├── review_merge.py          # 合并质量客观检查 → merge_review_report.json
+│   ├── signal_stats.py          # 视频类型信号统计（L3 提示用）
+│   └── tests/                   # 单元测试 + check_review_report.py 闸口
 └── assets/
     └── task_flow.png
 ```

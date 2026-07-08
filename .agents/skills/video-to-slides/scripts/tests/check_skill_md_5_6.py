@@ -2,7 +2,7 @@
 import re
 from pathlib import Path
 
-SKILL = Path("/Users/jarvis/Documents/VideoToDoc-skills/.agents/skills/video-to-slides/SKILL.md")
+SKILL = Path(__file__).resolve().parents[2] / "SKILL.md"
 text = SKILL.read_text(encoding="utf-8")
 
 

@@ -44,6 +44,19 @@ def main() -> int:
     parser.add_argument("--different-change-threshold", type=float, default=None)
     parser.add_argument("--different-hash-threshold", type=int, default=None)
     parser.add_argument("--sync-offset-ms", type=int, default=None)
+    parser.add_argument("--video-type",
+                        choices=["auto", "lecture_slides", "talking_head", "screen_recording", "movie_cinematic", "tutorial"],
+                        default=None, help="视频类型（auto 自动判定）")
+    parser.add_argument("--max-candidates", type=int, default=None,
+                        help="单视频最大候选数（硬上限，按 video_type 自动调）")
+    parser.add_argument("--match-window-sec", type=float, default=None,
+                        help="匹配窗口秒数（默认按 video_type 自动）")
+    parser.add_argument("--min-slide-seconds", type=float, default=None,
+                        help="最小换页点间隔秒数（默认按 video_type 自动）")
+    parser.add_argument("--no-opencv-capture", action="store_true",
+                        help="禁用 opencv 批量截图，回退 ffmpeg")
+    parser.add_argument("--detect-workers", type=int, default=None,
+                        help="候选图截图并行线程数（默认 8）")
     parser.add_argument("--force-rebuild", action="append", default=[], help="可重复传入：audio/asr/slides/align/all")
     args = parser.parse_args()
 
@@ -99,6 +112,18 @@ def main() -> int:
         cmd += ["--different-hash-threshold", str(args.different_hash_threshold)]
     if args.sync_offset_ms is not None:
         cmd += ["--sync-offset-ms", str(args.sync_offset_ms)]
+    if args.video_type is not None:
+        cmd += ["--video-type", args.video_type]
+    if args.max_candidates is not None:
+        cmd += ["--max-candidates", str(args.max_candidates)]
+    if args.match_window_sec is not None:
+        cmd += ["--match-window-sec", str(args.match_window_sec)]
+    if args.min_slide_seconds is not None:
+        cmd += ["--min-slide-seconds", str(args.min_slide_seconds)]
+    if args.no_opencv_capture:
+        cmd.append("--no-opencv-capture")
+    if args.detect_workers is not None:
+        cmd += ["--detect-workers", str(args.detect_workers)]
     for target in args.force_rebuild:
         cmd += ["--force-rebuild", target]
 

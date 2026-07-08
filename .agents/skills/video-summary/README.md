@@ -138,19 +138,14 @@ runs/<视频标题>_<时间戳>/
 video-summary/
 ├── SKILL.md                              # 操作手册（触发条件、工作流、参数）
 ├── README.md                             # 本文件（项目介绍、安装、产物）
-├── reference/
-│   └── review_agent_prompt.md            # 合并质量复核提示词模板（句法硬标准）
-├── signal_stats.py                       # 视频类型信号统计
 ├── scripts/
 │   ├── process.py                        # 主处理（下载/字幕/ASR/摘要）
-│   ├── prepare_merge.py                  # 合并段落数据准备 → merge_input.json
-│   ├── apply_merge.py                    # 应用合并结果 → transcript_merged.json
-│   ├── review_merge.py                   # 合并质量客观检查 → merge_review_report.json
 │   └── tests/                            # 单元测试 + 文档断言脚本
-│       ├── check_review_report.py        # 校验 self_review 审计键
-│       └── check_skill_md_6_6.py         # SKILL.md 6.6 节约定断言
+│       └── check_skill_md_6_6.py         # SKILL.md 步骤 6 迁出回归守卫
 └── assets/
     └── task_flow.png
+
+> **合并碎段逻辑已迁到 video-to-slides 阶段 0**（reference/merge_procedure.md）
 ```
 
 ## 与 video-to-slides 配合

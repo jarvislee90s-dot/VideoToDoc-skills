@@ -1,13 +1,8 @@
-from pathlib import Path
 import json
-import sys
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_shared"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from review_merge import review_groups, _parse_range, _looks_like_complement, main  # noqa: E402
+from videotodoc.review_merge import review_groups, _parse_range, _looks_like_complement, main  # noqa: E402
 
 
 class TestLooksLikeComplement:

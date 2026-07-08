@@ -42,8 +42,8 @@ print('boundaries:', s2['visual_signals']['slide_boundaries_ms'])  # 期望 [100
 
 ```bash
 .venv/bin/python3 -c "
-import sys; sys.path.insert(0,'.agents/skills/video-summary')
-from signal_stats import signal_stats
+import sys; sys.path.insert(0,'.agents/skills/video-to-slides/scripts')
+from videotodoc.signal_stats import signal_stats
 out = signal_stats('首先点击保存，然后下一步。第三名是X。')
 print('archetype' in out, out)  # 期望 False {...计数...}
 "
@@ -53,7 +53,7 @@ print('archetype' in out, out)  # 期望 False {...计数...}
 ## 5. prepare_merge 端到端
 
 ```bash
-.venv/bin/python3 .agents/skills/video-summary/scripts/prepare_merge.py \
+.venv/bin/python3 .agents/skills/video-to-slides/scripts/videotodoc/prepare_merge.py \
   "runs/内存暴涨，谁在哭？谁在笑？_20260701_075505/transcript.json" \
   --archetype topic_preserve -o /tmp/pm_out.json
 .venv/bin/python3 -c "import json; d=json.load(open('/tmp/pm_out.json')); print(d['suggestion']['archetype'], d['suggestion']['chars_per_group_range'])"
@@ -63,7 +63,7 @@ print('archetype' in out, out)  # 期望 False {...计数...}
 ### L3 回写验证
 
 ```bash
-.venv/bin/python3 .agents/skills/video-summary/scripts/prepare_merge.py \
+.venv/bin/python3 .agents/skills/video-to-slides/scripts/videotodoc/prepare_merge.py \
   "runs/内存暴涨，谁在哭？谁在笑？_20260701_075505/transcript.json" \
   --archetype enumeration_unit -o /tmp/pm_enum.json
 .venv/bin/python3 -c "import json; print(json.load(open('/tmp/pm_enum.json'))['suggestion']['chars_per_group_range'])"
@@ -74,7 +74,7 @@ print('archetype' in out, out)  # 期望 False {...计数...}
 
 ```bash
 # 取一个 video-to-slides run 的 slides.json 作为视觉信号
-.venv/bin/python3 .agents/skills/video-summary/scripts/prepare_merge.py \
+.venv/bin/python3 .agents/skills/video-to-slides/scripts/videotodoc/prepare_merge.py \
   <transcript.json> --archetype visual_event \
   --visual-signals <path/to/slides.json> -o /tmp/pm_vis.json
 .venv/bin/python3 -c "import json; d=json.load(open('/tmp/pm_vis.json')); print('boundaries_ms' in d['suggestion'].get('visual_signals',{}))"
@@ -85,11 +85,11 @@ print('archetype' in out, out)  # 期望 False {...计数...}
 ## 7. 全量相关测试
 
 ```bash
-PYTHONPATH=".agents/skills/video-to-slides/scripts:.agents/skills/_shared:.agents/skills/video-summary/scripts" \
+PYTHONPATH=".agents/skills/video-to-slides/scripts" \
   .venv/bin/python3 -m pytest \
   .agents/skills/video-to-slides/scripts/videotodoc/tests/test_transcript_merge.py \
-  .agents/skills/video-summary/scripts/tests/test_review_merge.py \
-  .agents/skills/video-summary/scripts/tests/test_strategies.py \
-  .agents/skills/video-summary/scripts/tests/test_signal_stats.py -v
+  .agents/skills/video-to-slides/scripts/videotodoc/tests/test_prepare_merge.py \
+  .agents/skills/video-to-slides/scripts/videotodoc/tests/test_review_merge.py \
+  .agents/skills/video-to-slides/scripts/videotodoc/tests/test_signal_stats.py -v
 ```
 **预期**：全 PASS。

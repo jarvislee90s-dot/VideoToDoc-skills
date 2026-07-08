@@ -62,6 +62,19 @@ def build_parser() -> argparse.ArgumentParser:
     process.add_argument("--force-rebuild", action="append", default=[], help="可重复传入：audio/asr/slides/align/all")
     process.add_argument("--transcript", type=Path, default=None,
                          help="已有转录文件路径（跳过 ASR）")
+    process.add_argument("--video-type",
+                         choices=["auto", "lecture_slides", "talking_head", "screen_recording", "movie_cinematic", "tutorial"],
+                         default=None, help="视频类型（auto 自动判定）")
+    process.add_argument("--max-candidates", type=int, default=None,
+                         help="单视频最大候选数（硬上限，按 video_type 自动调）")
+    process.add_argument("--match-window-sec", type=float, default=None,
+                         help="匹配窗口秒数（默认按 video_type 自动）")
+    process.add_argument("--min-slide-seconds", type=float, default=None,
+                         help="最小换页点间隔秒数（默认按 video_type 自动）")
+    process.add_argument("--no-opencv-capture", action="store_true",
+                         help="禁用 opencv 批量截图，回退 ffmpeg")
+    process.add_argument("--detect-workers", type=int, default=None,
+                         help="候选图截图并行线程数（默认 8）")
 
     capture = subparsers.add_parser("capture", help="截图 + ASR + 生成分段草案")
     capture.add_argument("video", type=Path)
@@ -204,12 +217,20 @@ def _settings_from_args(args: argparse.Namespace) -> Settings:
         "different_change_threshold",
         "different_hash_threshold",
         "sync_offset_ms",
+        "video_type",
+        "max_candidates",
+        "match_window_sec",
+        "min_slide_seconds",
+        "detect_workers",
     ):
         value = getattr(args, field, None)
         if value is not None:
             setattr(settings, field, value)
     if getattr(args, "keep_all_candidates", False):
         settings.keep_all_candidates = True
+        settings.keep_all_segment_candidates = True
+    if getattr(args, "no_opencv_capture", False):
+        settings.use_opencv_capture = False
     if getattr(args, "no_ocr_dedupe", False):
         settings.ocr_dedupe = False
     transcript_path = getattr(args, "transcript", None)

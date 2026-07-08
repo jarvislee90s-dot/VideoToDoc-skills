@@ -1,42 +1,36 @@
-"""验证 video-summary/SKILL.md 6.6 节精简 + 引用 reference。"""
+"""验证 video-summary/SKILL.md 步骤 6（合并）已迁出。
+
+回归守卫：确保合并流程不会回到 video-summary，已归 video-to-slides 阶段 0。
+"""
 import re
 from pathlib import Path
 
-SKILL = Path("/Users/jarvis/Documents/VideoToDoc-skills/.agents/skills/video-summary/SKILL.md")
+# 相对路径，适配 worktree 与原 repo
+SKILL = Path(__file__).resolve().parents[2] / "SKILL.md"
 text = SKILL.read_text(encoding="utf-8")
+
+
+def assert_not_contains(pattern: str, label: str) -> None:
+    assert not re.search(pattern, text), f"✗ {label} 不应存在（已迁到 video-to-slides）：{pattern}"
 
 
 def assert_contains(pattern: str, label: str) -> None:
     assert re.search(pattern, text), f"✗ {label} 不存在：{pattern}"
 
 
-def assert_not_contains(pattern: str, label: str) -> None:
-    assert not re.search(pattern, text), f"✗ {label} 不应存在：{pattern}"
+# 步骤 6 不应是合并碎段（已迁到 video-to-slides/reference/merge_procedure.md）
+assert_not_contains(r"6\.\s*\*\*合并转录碎段", "步骤 6 合并碎段")
+assert_not_contains(r"prepare_merge", "prepare_merge 引用")
+assert_not_contains(r"apply_merge", "apply_merge 引用")
+assert_not_contains(r"review_merge", "review_merge 引用")
+assert_not_contains(r"merge_review_report", "merge_review_report 引用")
+assert_not_contains(r"reference/review_agent_prompt", "review_agent_prompt 引用")
 
+# 步骤 6 现在是 Agent 摘要
+assert_contains(r"6\.\s*\*\*Agent 摘要\*\*", "步骤 6 Agent 摘要")
 
-# 6.6 节标题必须有"必做，不可跳过"（加粗）
-assert_contains(r"### 6\.6 Review Agent.*\*\*必做，不可跳过\*\*", "6.6 节必做标识")
+# 步骤 6（Agent 摘要）应读 transcript.txt，不读 transcript_merged.json
+assert_contains(r"Agent 读取 `transcript\.txt`", "摘要读 transcript.txt")
+assert_not_contains(r"transcript_merged\.json", "transcript_merged.json 引用")
 
-# 6.6 节不应有"为什么强制"段
-assert_not_contains(r"## 为什么强制", "6.6 节'为什么强制'段")
-
-# 6.6 节不应再内联旧版复核清单（句法完整性等应移到 reference）
-assert_not_contains(r"相邻段边界是否把补语/数据/宾语拆散", "旧 6.6 内联清单")
-
-# 6.6 节应引用 reference/review_agent_prompt.md
-assert_contains(r"reference/review_agent_prompt\.md", "6.6 节引用 reference")
-
-# 6.6 节必须有双执行路径（sub-agent 首选 + 提示词注入 fallback）
-assert_contains(r"路径 A", "6.6 双路径 A")
-assert_contains(r"路径 B", "6.6 双路径 B")
-assert_contains(r"self_review", "6.6 自审标注")
-
-# 6.6 节应有"review agent 规则"小节（文档用加粗样式）
-assert_contains(r"review agent 规则", "6.6 节规则小节")
-
-# 6.6 节不应内联完整 prompt 模板（清单 5 项不应出现在 SKILL.md）
-inline_template_count = text.count("### 1. 句法完整性")
-assert inline_template_count == 0, \
-    f"✗ 6.6 节不应内联 prompt 模板（发现 {inline_template_count} 处），应指向 reference/"
-
-print("✓ SKILL.md 6.6 节验证通过")
+print("✓ video-summary SKILL.md 步骤 6 已正确迁出，步骤 6 现为 Agent 摘要")

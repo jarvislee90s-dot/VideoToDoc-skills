@@ -68,6 +68,7 @@ class Section:
     transcript: str
     segment_indexes: list[int]
     notes: list[str] = field(default_factory=list)
+    image_paths: list[str] = field(default_factory=list)  # 段内所有图（按时间顺序，主图带 _main）
 
 
 @dataclass

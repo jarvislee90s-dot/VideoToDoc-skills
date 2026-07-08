@@ -12,11 +12,11 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_shared"))
 from transcript_merge import suggest_segments, normalize_raw  # noqa: E402
 
-# video-summary/ 根（signal_stats 提示用，懒导入，失败静默）
-_VIDEO_SUMMARY_DIR = str(Path(__file__).resolve().parents[1])
+# signal_stats 同包（懒导入，失败静默；_print_signal_hint 提示用）
+_SIGNAL_STATS_DIR = str(Path(__file__).resolve().parent)
 
 
 def _load_visual_signals(path: str | None) -> dict | None:
@@ -56,7 +56,7 @@ def _print_signal_hint(segs: list[dict]) -> None:
     仅 archetype="auto"（用户未声明类型）时调用。失败静默——提示非必需，不影响主流程。
     """
     try:
-        sys.path.insert(0, _VIDEO_SUMMARY_DIR)
+        sys.path.insert(0, _SIGNAL_STATS_DIR)
         from signal_stats import signal_stats  # noqa: WPS433
     except Exception:
         return

@@ -92,7 +92,7 @@ python3 .agents/skills/video-summary/scripts/prepare_merge.py \
 ## 安装依赖
 
 ```bash
-pip install mlx-whisper python-docx Pillow curl_cffi yt-dlp
+pip install mlx-whisper python-docx Pillow curl_cffi yt-dlp opencv-python numpy rapidocr
 
 # 思维导图渲染需要 mermaid-cli
 npm install -g @mermaid-js/mermaid-cli

@@ -2,8 +2,14 @@
 name: video-to-slides
 description: "在已有视频、音频、字幕的前提下，自动截图去重、图文对齐、语义整理、生成目录与思维导图、输出 Word/Markdown。触发条件：用户要求把视频整理成带截图的图文讲义；用户要求生成 Word/Markdown 讲义；用户说'做讲义'、'生成课件'、'视频转 PPT 笔记'。"
 ---
-
 # video-to-slides
+
+## 两种图文模式
+
+1. **图文一一对应（默认）**：每个文字段落默认选 1 张信息量最大的截图（edge_density + OCR 加权评分最高者作主图），输出讲义——适合内容紧凑、每次翻页对应一段讲解的视频。
+2. **多图对应一段文字（`--keep-all-candidates`）**：保留段内所有候选换页点的截图，按 `capture_ms` 时间顺序排在同一页的标题下方、文字上方。最终分页仍然按文字段落分，只是在多图段落里同一页会叠加多张图。适合需要看清楚视频里多个画面变化点的场景。
+
+> 注意：早期实现曾在 `--keep-all-candidates` 下把多图段拆成多个分页（候选页 + 主图页），会切断一段话的完整性。当前版本已改为整段文字保留在同一页，多张图附在同一页按时间顺序排列。
 
 视频截图 → 图文讲义。本 Skill 假设已有视频文件和转录文本；如果缺少则提示用户先运行 `video-summary`。
 
@@ -24,28 +30,44 @@ description: "在已有视频、音频、字幕的前提下，自动截图去重
 capture → review-segments(agent 介入) → finalize（仅 Markdown） → render_mindmap（导图 + Word）
 ```
 
-### capture：时长密度截图 + 分段草案
-- 根据视频时长动态决定截图间隔（≤5min→15s，≤15min→20s，≤30min→30s，>30min→40s）
-- 候选图封顶约 120 张
+### capture：截图 + 分段草案
+
+- **截图密度按 video_type 动态调**（参 spec 4.1 / 4.1.5 / 4.11）：
+  - `_scene_threshold_for_type`：talking_head 0.20 / lecture 0.03 / screen 0.08 / 其它 0.06
+  - `_min_slide_seconds_for_type`：talking_head 5.0s / lecture 0.5s / screen 1.0s / 其它 1.0s
+  - `_max_candidates_for_type`：talking_head 150 / lecture_slides 500 / screen_recording 400 / movie_cinematic 800 / tutorial 300 / 其它 200
+  - **4.1.5 动态调整**：`estimated = duration * type_density`，若 > max_candidates 则放大 min_slide_seconds（边界 ≤ duration*0.5），保证候选数不超上限
+  - **匹配窗口** `_match_window_sec_for_type`：talking_head 8s / lecture 3s / screen 3s / 其它 5s
+- 候选图使用 **`capture_frames_opencv` 批量截**（VideoCapture 一次 read N 帧），失败回退 `extract_frame`
+- 候选图并行线程数 `--detect-workers`（默认 8）
+- 候选图命名：`candidate_{idx:04d}_{ms}.png`（ffmpeg 路径）或 `candidate_{ms}.png`（opencv 路径），`trim_candidates_by_transcript` 时按 `[_main|_cand]` 加后缀
 - 生成分段草案 pending_segments.json
 
 ### review-segments：agent 介入分段
+
 - agent 审查 pending_segments.json，修改 suggested_action（keep/merge/split）
 - 确认后写 confirmed_segments.json
 
-### finalize：每段选 1 张最佳截图 + 补图 + 产物
-- 每段选 edge_density 最高的候选图作为该段唯一截图
-- slide 时间范围设为段的 [start_ms, end_ms]，使 align_sections 将段内所有 transcript 文字归到这一页
+### finalize：图文对齐 + 产物
+
+- **每段选 1 张最佳截图**（`--keep-all-candidates` False）或 **N 张**（True，按 capture_ms 时间顺序排同一页，文字不拆分）
+- 主图评分（spec 4.5）：`score = 0.5*edge_normalized + 0.5*ocr_keyword_overlap`
+- 匹配窗口（spec 4.2）：段 [X, Y] 在 [Y-W, Y) 内选候选
+- slide 时间范围 = 段 [start_ms, end_ms]
+- `align_sections` 将段内 transcript 归到对应 slide（`Section.image_paths` 默认空，单图时用 `image_path` 兜底）
 - 无候选图的段在段中点补一帧
 - merge 段时间范围自动扩展到目标段
 - 跨段边界去重（仅相邻段）
-- 生成 Markdown（Word 与思维导图在 Agent 整理后由 render_mindmap.py 生成）
+- 生成三份 Markdown（Word 与思维导图在阶段 3 由 render_mindmap.py 生成）
 
 ---
 
 ## 完整工作流图示
 
 ### 前置 Skill：video-summary 工作流
+
+> video-summary 产物只有 `transcript.json`（+ `transcript.txt`）。
+> 合并碎段（→ `transcript_merged.json`）在 video-to-slides **阶段 0** 执行。
 
 ```mermaid
 flowchart TB
@@ -59,26 +81,10 @@ flowchart TB
         F --> G
     end
 
-    G --> H[prepare_merge.py]
-    subgraph vs_merge ["语义合并 & Review 闭环"]
-        H --> I[merge_input.json<br/>含 suggestion 约束]
-        I --> J[整理 Agent<br/>语义合并]
-        J --> K[merged_groups.json]
-        K --> L[apply_merge.py<br/>校验 index]
-        L -- 校验失败 --> J
-        L -- 通过 --> M[transcript_merged.json]
-        K --> N[review_merge.py<br/>客观检查]
-        N --> O[merge_review_report.json<br/>初版]
-        O --> P[Review Agent<br/>独立上下文语义复核]
-        P --> Q[merge_review_report.json<br/>增强版]
-        Q --> J
-        J -. 按报告局部修正 .-> K
-    end
-
-    M --> R[整理/摘要 Agent]
+    G --> R[Agent 摘要<br/>读 transcript.txt]
     subgraph vs_output ["产物输出"]
         R --> S[<视频标题>_总结_<时间戳>.md]
-        M --> T[transcript.txt<br/>合并后文本]
+        G --> T[transcript.txt<br/>纯文本转录]
     end
 ```
 
@@ -86,34 +92,55 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph input ["输入检查"]
-        A[视频 + transcript.json/<br/>transcript_merged.json] --> B{文件是否存在？}
-        B -- 否 --> C[提示先运行 video-summary]
-        B -- 是 --> D[process.py]
+    subgraph stage0 ["阶段 0：合并转录碎段（Agent 执行）"]
+        A0[transcript.json<br/>来自 video-summary] --> B0[prepare_merge.py]
+        B0 --> C0[整理 Agent<br/>语义合并]
+        C0 --> D0[merged_groups.json]
+        D0 --> E0[apply_merge.py]
+        E0 --> F0[Review Agent<br/>双路径复核]
+        F0 --> G0[transcript_merged.json]
     end
 
-    subgraph p1 ["阶段 1：脚本自动执行"]
-        D --> E[前置合并<br/>优先 transcript_merged.json]
-        E --> F[截图 + 三段式去重]
-        F --> G[pending_segments.json]
-        G --> H[Review Agent<br/>审查 keep/merge/split]
-        H --> I[confirmed_segments.json]
-        I --> J[图文对齐]
-        J --> K[生成 Markdown<br/>原始/紧凑/整理版]
+    G0 --> A1[视频文件 + transcript_merged.json]
+
+    subgraph stage1 ["阶段 1：脚本自动执行"]
+        A1 --> B1[process.py]
+        B1 --> C1[截图 + 三段式去重]
+        C1 --> D1[图文对齐]
+        D1 --> E1[生成 Markdown<br/>原始/紧凑/整理版]
     end
 
-    subgraph p2 ["阶段 2：Agent 执行"]
-        K --> L[整理 Agent<br/>生成全文目录]
-        L --> M[整理 Agent<br/>语义整理文字]
-        M --> N[整理 Agent<br/>手写 <视频标题>_思维导图_<时间戳>.mmd]
+    subgraph stage2 ["阶段 2：Agent 执行"]
+        E1 --> F2[⑤ 生成全文目录]
+        F2 --> G2[⑥ 语义整理文字]
+        G2 --> H2[⑦ 编写思维导图 .mmd]
     end
 
-    subgraph p3 ["阶段 3：脚本自动收尾"]
-        N --> O[finalize.py<br/>恢复图片 + 渲染导图 + Word]
-        O --> Q[<视频标题>_讲义_整理版.docx]
-        O --> R[<视频标题>_思维导图.png]
+    subgraph stage3 ["阶段 3：脚本自动收尾"]
+        H2 --> I3[finalize.py<br/>恢复图片 + 渲染导图 + Word]
+        I3 --> J3[<视频标题>_讲义_整理版.docx]
+        I3 --> K3[<视频标题>_思维导图.png]
     end
 ```
+
+---
+
+## 阶段 0：合并转录碎段（必做）
+
+> **Agent 注意**：本阶段由你主导，详细流程读 `reference/merge_procedure.md` 并完整执行：
+>
+> 1. 结构原型判定（4 原型 + L1/L2/L3 三层证据，详见 reference 6.1）
+> 2. `prepare_merge` → `merged_groups.json` → `apply_merge` → `review_merge`
+> 3. **Review Agent 双路径复核**（路径 A 独立子代理 / 路径 B 上下文重置自审）
+> 4. 若 review 报 critical → 修改 → 重跑 `apply_merge` + `review_merge` + Review Agent，**最多 2 次 review 迭代**
+> 5. **收尾必跑**：`python3 scripts/videotodoc/tests/check_review_report.py <run_dir>`，退出码必须 0
+> 6. 不通过 `check_review_report` 闸口**禁止进入阶段 1**
+> 7. 全部硬标准、合并规则、句法完整性要求、Review Agent prompt 模板：在 `reference/merge_procedure.md` + `reference/review_agent_prompt.md`
+
+阶段 0 完成后必须存在：
+
+- `transcript_merged.json`
+- `merge_review_report.json`（含 `pass: true` + `self_review` 键，已被 `check_review_report.py` 校验）
 
 ---
 
@@ -126,22 +153,9 @@ flowchart TB
 - 确认视频文件、`transcript.json` 是否存在
 - 缺少时提示用户先运行 `video-summary`
 
-### ①.5 前置合并（复用 video-summary 转录时）
-
-当通过 `--transcript` 复用 video-summary 产出的 `transcript.json` 时，若碎段很多（半句话一段，
-通常 ASR 产出数百段），直接用于图文对齐会导致每页只有半句话、页数碎片化。此时应**先执行
-video-summary 的 ⑤.5 语义合并步骤**：
-
-1. `prepare_merge`：读取 `transcript.json` 生成 `merge_input.json`（含目标段数建议）
-2. Agent 按 ⑤.5 合并规则写 `merged_groups.json`（同话题聚合，原文保留只加标点）
-3. `apply_merge` 校验并落盘，产出 `transcript_merged.json`（约数十段）
-
-pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存在），无需额外参数；
-若未做合并，则回退使用原始 `transcript.json`。
-
 ### ② 截图 + 三段式去重
 
-- 运行 `scripts/process.py`，默认 `--capture-mode audit --fallback-interval-sec 15`（OCR 去重默认开启，无需显式传；用 `--no-ocr-dedupe` 关闭）
+- 运行 `.agents/skills/video-to-slides/scripts/process.py`，默认 `--capture-mode audit --fallback-interval-sec 15 --video-type auto`（auto 自动判定视频类型，影响截图策略）（OCR 去重默认开启，无需显式传；用 `--no-ocr-dedupe` 关闭）
 - 三段式去重：明显重复 → 合并；明显不同 → 保留；不确定 → OCR 判定
 
 ### ③ 图文对齐
@@ -152,11 +166,11 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 
 脚本自动生成三份 Markdown：
 
-| 文件 | 说明 |
-|------|------|
-| `<视频标题>_讲义_<时间戳>.md` | 原始换行版 |
-| `<视频标题>_讲义_紧凑版_<时间戳>.md` | 紧凑段落版 |
-| `<视频标题>_讲义_整理版_<时间戳>.md` | **Agent 工作文件**（含 `<!-- IMAGE:N -->` 占位符） |
+| 文件                                   | 说明                                                                |
+| -------------------------------------- | ------------------------------------------------------------------- |
+| `<视频标题>_讲义_<时间戳>.md`        | 原始换行版                                                          |
+| `<视频标题>_讲义_紧凑版_<时间戳>.md` | 紧凑段落版                                                          |
+| `<视频标题>_讲义_整理版_<时间戳>.md` | **Agent 工作文件**（含 `<!-- IMAGE:N-M[:main] -->` 占位符） |
 
 > **注意**：此阶段**仅输出 Markdown**，`.docx` 和 `.png` 尚未生成。Agent 完成整理并手写 `<视频标题>_思维导图_<时间戳>.mmd` 后，需运行 `render_mindmap.py` 生成最终导图与 Word。
 
@@ -173,10 +187,12 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 **输入**：`<视频标题>_讲义_紧凑版_<时间戳>.md`
 
 **任务**：
+
 1. 阅读紧凑版全文，识别章节划分
 2. 在 `## 图文讲义` 标题之后、`### 第 1 页` 之前插入目录
 
 **输出格式**：
+
 ```markdown
 ## 图文讲义
 
@@ -189,6 +205,7 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 ```
 
 **要求**：
+
 - 章节划分依据语义转折，不是按页数均分
 - 时间范围精确到秒
 - **必须**包含至少 3 个章节项；少于 3 个说明章节切分太粗
@@ -200,16 +217,19 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 > **Agent 注意**：本步骤包括**复制目录**和**改写文字**两个任务，**两个都必做**。
 
 **输入**：
+
 - `<视频标题>_讲义_整理版_<时间戳>.md`（占位版：每页只有 `<!-- IMAGE:N -->` + 原始 ASR）
 - `<视频标题>_讲义_紧凑版_<时间戳>.md`（⑤ 步已写入目录）
 
 **任务**：
 
 #### 任务 1：从紧凑版复制目录到整理版（**先做**）
+
 1. 读紧凑版 `## 图文讲义` 标题后、`### 第 1 页` 之前的内容（即 ⑤ 步写入的目录 + 分隔线）
-2. 在整理版的 `## 图文讲义` 标题后（**已有标题，不要再加**）、`### 第 1 页` 之前**插入这段内容**
+2. 在整理版的 `## 图文讲义` 标题后（**整理版默认不含此标题，须先补 `## 图文讲义` 再插入目录**）、`### 第 1 页` 之前**插入这段内容**（多图时按 `<!-- IMAGE:N-M[:main] -->` 格式排列占位符）
 
 #### 任务 2：改写每页文字
+
 1. **只改写文字内容**，不要动 `<!-- IMAGE:N -->` 占位符
 2. 不新增视频里没有的事实
 3. 去掉口播冗余（"好"、"嗯"、"那个"等）
@@ -222,13 +242,14 @@ pipeline 会**自动优先使用同目录的 `transcript_merged.json`**（若存
 
 ---
 
-### ⑦ 重写思维导图
+### ⑦ 编写思维导图
 
 **输入**：改写后的 `<视频标题>_讲义_整理版_<时间戳>.md`
 
 **任务**：
+
 1. 基于书面整理版提取核心观点
-2. 重写 `<视频标题>_思维导图_<时间戳>.mmd`
+2. 编写 `<视频标题>_思维导图_<时间戳>.mmd`
 3. 格式为 Mermaid mindmap
 
 **输出**：`<视频标题>_思维导图_<时间戳>.mmd`
@@ -266,23 +287,38 @@ python3 .agents/skills/video-to-slides/scripts/process.py \
 
 # 手工修改思维导图后刷新
 python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标题>_<时间戳>
+# 多图模式：段内所有候选换页点都生成图，按时间顺序排在同一页（文字段落分页不变）
+# 需要重新截图时加 --force-rebuild slides，传 transcript_merged.json 复用合并后转录。
+python3 .agents/skills/video-to-slides/scripts/process.py \
+  "runs/<视频标题>_<时间戳>/<视频标题>.mp4" \
+  --transcript "runs/<视频标题>_<时间戳>/transcript_merged.json" \
+  --keep-all-candidates --force-rebuild slides \
+  --run-dir "runs/<视频标题>_<时间戳>"
 ```
 
 ---
 
 ## 参数说明
 
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| `video` | （必填） | 视频文件路径 |
-| `--project-dir` | 自动检测 | VideoToDoc 项目根目录 |
-| `--asr` | `mlx-whisper` | ASR 后端 |
-| `--transcript` | `None` | 已有转录文件路径（跳过 ASR） |
-| `--capture-mode` | `audit` | 截图模式：fast/fine/audit |
-| `--fallback-interval-sec` | `15` | 兜底截图间隔秒数 |
-| `--no-ocr-dedupe` | 关闭 | 关闭 OCR 辅助去重（默认开启） |
-| `--sync-offset-ms` | `None` | 时间偏移修正（毫秒） |
-| `--force-rebuild` | `[]` | 重跑步骤：audio/asr/slides/align/mindmap |
+| 参数                              | 默认值          | 说明                                                                                 |
+| --------------------------------- | --------------- | ------------------------------------------------------------------------------------ |
+| `video`                         | （必填）        | 视频文件路径                                                                         |
+| `--project-dir`                 | 自动检测        | VideoToDoc 项目根目录                                                                |
+| `--asr`                         | `mlx-whisper` | ASR 后端                                                                             |
+| `--transcript`                  | `None`        | 已有转录文件路径（跳过 ASR）                                                         |
+| `--capture-mode`                | `audit`       | 截图模式：fast/fine/audit                                                            |
+| `--fallback-interval-sec`       | `15`          | 兜底截图间隔秒数                                                                     |
+| `--no-ocr-dedupe`               | 关闭            | 关闭 OCR 辅助去重（默认开启）                                                        |
+| `--video-type`                  | `auto`        | 视频类型：auto/lecture_slides/talking_head/screen_recording/movie_cinematic/tutorial |
+| `--sync-offset-ms`              | `None`        | 时间偏移修正（毫秒）                                                                 |
+| `--max-candidates`              | `200`         | 单视频最大候选数（硬上限，按 video_type 自动调）                                     |
+| `--match-window-sec`            | 按 video_type   | 匹配窗口秒数：talking_head 8 / lecture 3 / screen 3 / others 5                       |
+| `--scene-threshold`             | 按 video_type   | ffmpeg scene 阈值：talking_head 0.20 / lecture 0.03 / screen 0.08 / others 0.06      |
+| `--min-slide-seconds`           | 按 video_type   | 最小换页点间隔：talking_head 5.0 / lecture 0.5 / screen 1.0 / others 1.0             |
+| `--keep-all-candidates`        | 关              | 开启后段内保留所有候选换页点的截图，仍按文字段落分页（30 页），多图以附件形式放在同一页，按 capture_ms 时间顺序排列；脚本内部 key 为 `keep_all_segment_candidates` |
+| `--no-opencv-capture`           | 开              | 关闭后候选图阶段回退 ffmpeg（默认 opencv 批量）                                      |
+| `--detect-workers`              | `8`           | 候选图截图并行线程数（仅 use_opencv_capture=True 时生效）                            |
+| `--force-rebuild`               | `[]`          | 重跑步骤：audio/asr/slides/align/mindmap                                             |
 
 ---
 
@@ -293,6 +329,15 @@ python3 .agents/skills/video-to-slides/scripts/render_mindmap.py runs/<视频标
 3. **不确定**：调用 OCR；文本相似度 `>= 0.92` 且变化面积 `< 0.12` → 重复，否则保留
 
 不要对全部候选图全量 OCR。白底 PPT 容易误合并，OCR 去重默认开启；如需关闭用 `--no-ocr-dedupe`。
+
+**多图一段**（`--keep-all-candidates` 开启时）：段内所有换页点都生成图，按 capture_ms 时间顺序排在同一页的标题下方、文字上方。**文字不拆分、页数不变（仍然 30 页）。**
+
+- 主图（edge + OCR 关键词加权评分最高）加 `_main` 标记 → 命名 `p{NN}_{MM}_main_{X.Ys}.png`
+- 候选图（其他换页点）加 `_cand` 标记 → 命名 `p{NN}_{MM}_cand_{X.Ys}.png`
+- 整理版占位符 `<!-- IMAGE:N-M[:main] -->`（N=页码, M=段内序号，`:main` 后缀标记主图）
+- `Section.image_paths` 收集段内所有图路径（含主图），渲染时整段输出在同一页
+
+> 旧版曾有“候选页 + 主图页”拆分行为，会切断一段话的完整性。当前版本已统一为"整段文字归主图页、其余图附在同一页"，避免分页变多。
 
 ---
 

@@ -4,12 +4,8 @@ signal_stats 只返回各原型锚点信号的命中计数，**不**返回 "arch
 （那会构成脚本决策，违反 Constitution I）。计数是给整理 agent 的客观提示，
 类型判定权始终在 agent。
 """
-from pathlib import Path
-import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # video-summary/
-
-from signal_stats import signal_stats  # noqa: E402
+from videotodoc.signal_stats import signal_stats  # noqa: E402
 
 
 class TestSignalStats:

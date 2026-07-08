@@ -45,3 +45,14 @@ def test_process_output_skips_missing_optional_fields(tmp_path: Path, capsys):
     assert "- semantic_docx:" not in captured.out
     assert "- compact_markdown:" in captured.out
     assert "- semantic_markdown:" in captured.out
+
+
+class TestVideoTypeArg:
+    def test_video_type_passed_to_settings(self):
+        from videotodoc.config import Settings
+        s = Settings(video_type="talking_head")
+        assert s.video_type == "talking_head"
+
+    def test_video_type_default_auto(self):
+        from videotodoc.config import Settings
+        assert Settings().video_type == "auto"

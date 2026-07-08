@@ -4,13 +4,8 @@ Constitution III：缺 --archetype 时 suggestion 字节等价旧 4 键 dict。
 Constitution V：--visual-signals 复用 video-to-slides 的 slides.json，不重算翻页。
 """
 import json
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))  # scripts/
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "_shared"))  # _shared/
-
-from prepare_merge import main  # noqa: E402
+from videotodoc.prepare_merge import main  # noqa: E402
 
 
 def _write_transcript(tmp_path, end_ms=690_000):
