@@ -784,7 +784,21 @@ def transcribe_audio(audio_path: Path, run_dir: Path, model: str, language: str 
             "text": seg.get("text", "").strip(),
         })
 
-    transcript_json_path.write_text(json.dumps(segments, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 统一为 dict+毫秒 schema，与字幕路径保持一致（避免跨 skill 格式分歧）
+    normalized = [
+        {
+            "start_ms": _seconds_to_ms(seg.get("start", 0)),
+            "end_ms": _seconds_to_ms(seg.get("end", 0)),
+            "text": seg.get("text", ""),
+        }
+        for seg in segments
+    ]
+    transcript_data = {
+        "segments": normalized,
+        "language": language,
+        "backend": "mlx-whisper",
+    }
+    transcript_json_path.write_text(json.dumps(transcript_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     full_text = "\n".join(seg["text"] for seg in segments)
     transcript_txt_path.write_text(full_text, encoding="utf-8")
@@ -826,7 +840,7 @@ def save_subtitle_as_transcript(subtitle_text: str, transcript_json_path: Path, 
             "text": seg.get("text", ""),
         })
 
-    transcript_data = {"segments": normalized, "language": language}
+    transcript_data = {"segments": normalized, "language": language, "backend": "subtitle"}
     transcript_json_path.write_text(json.dumps(transcript_data, ensure_ascii=False, indent=2), encoding="utf-8")
     transcript_txt_path.write_text("\n".join(lines), encoding="utf-8")
 
@@ -947,8 +961,13 @@ def cmd_process(args: argparse.Namespace) -> None:
     # 生成最终摘要文件：视频标题_总结_时间戳.md
     summary_path = run_dir / _build_summary_filename(title, ts)
     if not summary_path.exists():
-        summary_path.write_text(f"# {title}\n\n", encoding="utf-8")
-        print(f"  📝 创建摘要文件：{summary_path.name}")
+        # 脚本只创建占位文件，摘要正文由 Agent 按 SKILL.md 步骤 6 补写
+        summary_path.write_text(
+            f"# {title}\n\n"
+            f"> 本文件由脚本自动创建的占位文件，摘要正文需按 SKILL.md 步骤 6 由 Agent 读取 transcript.txt 后补写。\n",
+            encoding="utf-8",
+        )
+        print(f"  📝 创建占位摘要：{summary_path.name}（待 Agent 补写）")
 
     # 清理
     if args.cleanup:

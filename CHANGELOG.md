@@ -5,6 +5,38 @@
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 2026-07-08
+
+### Added — 多图对应一段文字模式
+
+- **`--keep-all-candidates` 多图模式**：段内所有候选换页点的截图都保留在同一页，按 `capture_ms` 时间顺序排在标题下方、文字上方；**文字不拆分、页数不变（仍按文字段落 30 页）**，适合需要看全每段画面变化点的场景
+- SKILL.md 开头新增「两种图文模式」说明（图文一一对应 vs 多图对应一段文字），并在默认命令段补多图模式命令示例
+- README 功能清单加多图模式条目，快速开始段补多图命令
+
+### Changed — 多图对齐按段合页（破坏性修复）
+
+- `align.py` `align_sections` 重写多图段逻辑：旧版在段内多个 `capture_ms` 时按中点切分文字、生成多个独立分页（候选页 + 主图页），会切断一段话完整性；改为按 `(start_ms, end_ms)` 全同分组，整段文字归主图那一页，其余图作为附件图通过 `Section.image_paths` 附在同一页；末尾用 `enumerate(start=1)` 重新连续编号，消除 trim 阶段的跳号
+- `document.py` `render_original_markdown` 改为 `image_paths or [image_path]` 循环渲染多图（与紧凑版/整理版对齐）
+- SKILL.md 参数表把笔误的 `--keep-all-segment-candidates`（内部 key）修正为 wrapper 实际参数名 `--keep-all-candidates`
+- README 工作流图 finalize 框描述从「跨段截图按区间切分文本，句末标点回溯断句」改为「按段合页：多图段保持 30 页，整段文字归主图，其余图按 capture_ms 时间顺序附在同一页，不切分文字」
+
+### Fixed — 文档与代码不一致
+
+- `test_align.py` 旧断言 `test_long_segment_split_across_two_slides`（要求长段跨两图切分文字）与新按段合页行为冲突，改为 `test_long_segment_across_two_split_slides_kept_whole` 验证整段不拆分；新增 `test_multi_image_same_segment_merged_into_one_page` 直接覆盖多图合一页场景
+- `specs/001-video-type-segmentation/quickstart.md` 引用过时的 video-summary 脚本路径（signal_stats / prepare_merge / test_review_merge 等），全部迁移到 `video-to-slides/scripts/videotodoc/`，§7 测试块同步更新
+
+### Changed — video-summary Schema 统一
+
+- `process.py` ASR 转录输出统一为 `dict + 毫秒` schema（`segments` + `language` + `backend`），与字幕路径保持一致，避免跨 skill 格式分歧
+- SKILL.md 产物文件名从 `video.mp4` 修正为 `<视频标题>.mp4`（与实际下载命名一致），补「标题与文件名说明」段（`_slugify()` 处理文件系统不安全字符）
+- SKILL.md 步骤 6 补「脚本只创建占位 summary.md，Agent 必须按要点补写摘要正文」
+
+### 验证
+
+- align 13 测试 + specs/001 §7 测试组合 47 测试全 PASS
+- 新视频 BV1cNdrB4Evw 端到端跑通：30 页、7 个多图段、整理版 Word 31M
+- 单图版（_单图版_ 后缀）与多图版并存
+
 ## 2026-07-02
 
 ### Added

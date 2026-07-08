@@ -6,6 +6,7 @@ import shutil
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Literal
 
 from PIL import Image, ImageFilter
 from PIL import ImageChops
@@ -16,6 +17,11 @@ from .io import read_json, write_json
 from .models import DedupeStats, Slide, SlideSet, Transcript, to_plain_dict
 from .ocr import extract_text, text_similarity
 from .utils import VideoToDocError, ms_to_seconds, run_command, seconds_to_ms
+
+
+VideoType = Literal[
+    "lecture_slides", "talking_head", "screen_recording", "movie_cinematic", "tutorial"
+]
 
 
 def detect_slides(video_path: Path, output_dir: Path, output_json: Path, settings: Settings, force: bool = False, skip_dedupe: bool = False) -> SlideSet:
@@ -36,11 +42,24 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
     run_dir = output_dir.parent
     candidates_dir = run_dir / "slide_candidates"
     duration_ms = probe_duration_ms(video_path)
-    change_points = detect_scene_changes(video_path, settings.scene_threshold)
+    duration_sec = duration_ms / 1000.0
+    # 按视频类型调整场景检测阈值（auto 时用 settings.scene_threshold）
+    scene_threshold = _scene_threshold_for_type(settings.video_type, settings.scene_threshold)
+    change_points = detect_scene_changes(video_path, scene_threshold)
     candidate_points = _candidate_points(change_points, duration_ms, settings)
+    # G2: 候选点硬上限保护（动态调整后一般不会超，但作为安全网）
+    max_caps = _max_candidates_for_type(settings.video_type, settings.max_candidates, duration_sec)
+    if len(candidate_points) > max_caps and max_caps > 0:
+        step = len(candidate_points) / max_caps
+        candidate_points = [candidate_points[int(i * step)] for i in range(max_caps)]
     if settings.capture_mode in {"fine", "audit", "complete"}:
         write_candidate_audit(video_path, candidate_points, candidates_dir, run_dir / "slide_candidates.html", settings)
-    boundaries = _build_boundaries(candidate_points, duration_ms, settings.min_slide_seconds)
+    # G1: 按 video_type 取基线；G3: 动态调整（确保候选数不超 max_caps）
+    base_min_slide = _min_slide_seconds_for_type(settings.video_type, settings.min_slide_seconds)
+    min_slide_seconds = _dynamic_min_slide_seconds(
+        settings.video_type, base_min_slide, duration_sec, max_caps
+    )
+    boundaries = _build_boundaries(candidate_points, duration_ms, min_slide_seconds)
     keep_all = settings.capture_mode == "complete" or settings.keep_all_candidates or skip_dedupe
 
     slides: list[Slide] = []
@@ -57,9 +76,21 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
         ed = edge_density(candidate_path)
         return (idx, start_ms, end_ms, candidate_path, image_hash, ed)
 
+    # G6: opencv 批量截候选（按 spec 4.8），失败时回退 ffmpeg
+    if settings.use_opencv_capture:
+        try:
+            capture_frames_opencv(
+                video_path,
+                [_candidate_capture_ms(s, e, settings) for s, e in boundaries],
+                candidates_dir,
+                name_template="candidate_{ms}.png",
+            )
+        except Exception:
+            print("  ⚠️  opencv 批量截图失败，回退 ffmpeg 逐帧截取")
+
     task_args = [(i, s, e) for i, (s, e) in enumerate(boundaries)]
     precomputed: dict[int, tuple[int, int, Path, int, float]] = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=max(1, int(settings.detect_workers))) as executor:
         futures = {executor.submit(_extract_candidate, arg): arg[0] for arg in task_args}
         for future in as_completed(futures):
             idx, start_ms, end_ms, candidate_path, image_hash, ed = future.result()
@@ -159,6 +190,310 @@ def refine_selected_slides(video_path: Path, slides: list[Slide], output_dir: Pa
     return refined
 
 
+def _classify_by_features(scene_rate: float, edge_density: float, saturation_mean: float) -> VideoType:
+    """按场景变化率/边缘密度/饱和度判型（纯函数，便于测试）。
+
+    阈值参考 videoQuickNote classify_video，适配本项目的 detect_scene_changes 口径。
+    """
+    if scene_rate < 0.05 and edge_density > 0.15:
+        return "lecture_slides"
+    if scene_rate < 0.03 and saturation_mean < 60 and edge_density < 0.10:
+        return "talking_head"
+    if scene_rate < 0.10 and edge_density > 0.20 and saturation_mean < 80:
+        return "screen_recording"
+    if scene_rate > 0.30:
+        return "movie_cinematic"
+    return "tutorial"
+
+
+def _scene_threshold_for_type(video_type: str, base: float) -> float:
+    """按视频类型调整场景变化检测阈值（越大越宽松，越少检出）。"""
+    if video_type == "talking_head":
+        return 0.20      # 宽松：出镜讲解画面变化多为无意义，少产生候选
+    if video_type == "lecture_slides":
+        return 0.03      # 敏感：PPT 翻页要检出
+    if video_type == "screen_recording":
+        return 0.08
+    return base          # auto/movie_cinematic/tutorial 用配置值
+
+
+def _min_slide_seconds_for_type(video_type: str, base: float) -> float:
+    """按 video_type 返回 min_slide_seconds 基线值（秒）。
+
+    talking_head 5s（人脸动作不能算换页点）
+    lecture_slides/movie_cinematic 0.5s（PPT 翻页/镜头切换快）
+    screen_recording 1s
+    其他用 base
+    """
+    if video_type == "talking_head":
+        return 5.0
+    if video_type in ("lecture_slides", "movie_cinematic"):
+        return 0.5
+    if video_type == "screen_recording":
+        return 1.0
+    return base
+
+
+def _max_candidates_for_type(video_type: str, base: int, duration_sec: float) -> int:
+    """按 video_type + duration 算候选数硬上限。
+
+    type_cap 表 + duration_factor 调整：duration_factor = max(1, duration/900)，
+    每 15 分钟候选数翻倍，达 type_cap 即封顶。
+    """
+    type_caps = {
+        "talking_head": 150,
+        "lecture_slides": 500,
+        "screen_recording": 400,
+        "movie_cinematic": 800,
+        "tutorial": 300,
+    }
+    type_cap = type_caps.get(video_type, base)
+    duration_factor = max(1.0, duration_sec / 900.0)
+    return min(type_cap, int(base * duration_factor))
+
+
+# Spec 4.1.5: 每秒变化点密度（用于动态调整 min_slide_seconds）
+_TYPE_DENSITY: dict[str, float] = {
+    "talking_head": 0.2,
+    "lecture_slides": 1.5,
+    "screen_recording": 1.0,
+    "movie_cinematic": 3.0,
+    "tutorial": 0.8,
+}
+
+
+def _dynamic_min_slide_seconds(
+    video_type: str, base: float, duration_sec: float, max_candidates: int
+) -> float:
+    """Spec 4.1.5: 动态调整 min_slide_seconds。
+
+    estimated = duration_sec * type_density
+    若 estimated > max_candidates，则 dynamic = estimated / max_candidates
+    最终 = max(base, dynamic)，且 ≤ duration_sec * 0.5（边界保护）
+    """
+    type_density = _TYPE_DENSITY.get(video_type, 1.0)
+    estimated = duration_sec * type_density
+    if estimated > max_candidates and max_candidates > 0:
+        dynamic = estimated / max_candidates
+    else:
+        dynamic = base
+    adjusted = max(base, dynamic)
+    boundary = duration_sec * 0.5
+    return min(adjusted, boundary)
+
+
+def _match_window_sec_for_type(video_type: str) -> float:
+    """Spec 4.2/4.11: 按 video_type 返回匹配窗口秒数。
+
+    talking_head 8s / lecture_slides 3s / screen_recording 3s / 其它 5s
+    """
+    if video_type == "talking_head":
+        return 8.0
+    if video_type in ("lecture_slides", "screen_recording"):
+        return 3.0
+    return 5.0  # movie_cinematic / tutorial / auto / default
+
+
+def _match_window(seg_start_ms: int, seg_end_ms: int, window_ms: int) -> tuple[int, int]:
+    """段匹配窗口 [max(seg_start, seg_end - W), seg_end) 左闭右开。
+
+    段长 < W 时自然回退到 [seg_start, seg_end)（不超段首）。
+    """
+    match_start = max(seg_start_ms, seg_end_ms - window_ms)
+    return (match_start, seg_end_ms)
+
+
+_PUNCT_PATTERN = re.compile(r"[\s，。！？、；：\"\"''（）()\.\,\!\?\;\:]")
+
+
+def _extract_keywords(text: str) -> set[str]:
+    """从文本提取字符 bigram 集合（去标点）。短文本（<2 字符）返回空集。"""
+    cleaned = _PUNCT_PATTERN.sub("", text or "").strip()
+    if len(cleaned) < 2:
+        return set()
+    return {cleaned[i:i + 2] for i in range(len(cleaned) - 1)}
+
+
+def _ocr_keyword_overlap(seg_text: str, ocr_text: str | None) -> float:
+    """seg 与 ocr 关键词 Jaccard 重叠比 = |seg_kw ∩ ocr_kw| / |seg_kw|。
+
+    OCR 为空或 seg 为空时返回 0.0。
+    """
+    if not seg_text or not ocr_text:
+        return 0.0
+    seg_kw = _extract_keywords(seg_text)
+    ocr_kw = _extract_keywords(ocr_text)
+    if not seg_kw or not ocr_kw:
+        return 0.0
+    return len(seg_kw & ocr_kw) / len(seg_kw)
+
+
+def _score_candidate(
+    slide,  # Slide 实例（有 edge_density, ocr_text 属性）
+    seg_text: str,
+    max_edge_in_seg: float,
+    edge_weight: float = 0.5,
+    ocr_weight: float = 0.5,
+) -> float:
+    """主图评分 = edge_weight * edge_normalized + ocr_weight * ocr_keyword_overlap。
+
+    edge_normalized = slide.edge_density / max(max_edge_in_seg, 1e-6)
+    """
+    edge = float(getattr(slide, "edge_density", 0.0) or 0.0)
+    edge_normalized = edge / max(max_edge_in_seg, 1e-6)
+    ocr = getattr(slide, "ocr_text", "") or ""
+    ocr_overlap = _ocr_keyword_overlap(seg_text, ocr)
+    return edge_weight * edge_normalized + ocr_weight * ocr_overlap
+
+
+def _pick_main_candidate(slides, seg_text: str, edge_weight: float, ocr_weight: float):
+    """从候选 slides 中选评分最高者作为主图。
+
+    空列表抛 ValueError。单元素直接返回。
+    """
+    if not slides:
+        raise ValueError("候选列表为空，无法选取主图")
+    if len(slides) == 1:
+        return slides[0]
+    max_edge = max(float(getattr(s, "edge_density", 0.0) or 0.0) for s in slides)
+    return max(slides, key=lambda s: _score_candidate(s, seg_text, max_edge, edge_weight, ocr_weight))
+
+
+def _build_image_name(
+    seg_index: int,
+    intra_index: int,
+    capture_ms: int,
+    is_main: bool,
+    single: bool = False,
+) -> str:
+    """生成图片文件名：p{NN}_{MM}_{X.Ys}[_main].png
+
+    - seg_index: 0-based 段号（输出时 +1）
+    - intra_index: 0-based 段内顺序（输出时 +1）
+    - capture_ms: 截图时刻毫秒
+    - is_main: 是否主图
+    - single: 段内仅 1 张时（不强制加 _main 后缀以保持简洁）
+    """
+    seg_n = f"{seg_index + 1:02d}"
+    intra_n = f"{intra_index + 1:02d}"
+    seconds = capture_ms / 1000.0
+    # 后缀规则（按 spec 4.6）：主图 _main，候选 _cand，单图无后缀
+    if is_main and not single:
+        suffix = "_main"
+    elif not is_main and not single:
+        suffix = "_cand"
+    else:
+        suffix = ""
+    return f"p{seg_n}_{intra_n}{suffix}_{seconds:.1f}s.png"
+
+
+def capture_frames_opencv(
+    video_path: Path,
+    timestamps_ms: list[int],
+    output_dir: Path,
+    name_template: str = "frame_{ms:07d}.png",
+) -> dict[int, Path]:
+    """用 opencv VideoCapture 批量截取视频帧。返回 {ms: image_path}。
+
+    优势：一次 VideoCapture 打开，多次 read，10-20ms/帧。
+    劣势：seek 精度不如 ffmpeg precise=True（最终入选 slide 仍用 ffmpeg 重截）。
+    """
+    import cv2
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        raise RuntimeError(f"无法打开视频：{video_path}")
+
+    results: dict[int, Path] = {}
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for ms in timestamps_ms:
+        cap.set(cv2.CAP_PROP_POS_MSEC, ms)
+        ret, frame = cap.read()
+        if not ret:
+            continue
+        out_path = output_dir / name_template.format(ms=ms)
+        cv2.imwrite(str(out_path), frame)
+        results[ms] = out_path
+
+    cap.release()
+    return results
+
+
+def _mean_saturation(frame_bgr) -> float:
+    """BGR 帧 → HSV 的 S 通道均值。"""
+    import cv2
+    hsv = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2HSV)
+    return float(hsv[:, :, 1].mean())
+
+
+def _edge_density_from_array(frame_bgr) -> float:
+    """从 BGR numpy 数组算边缘密度（与 edge_density(path) 口径一致，复用 PIL）。"""
+    rgb = frame_bgr[:, :, ::-1].copy()
+    image = Image.fromarray(rgb)
+    edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
+    pixels = list(edges.get_flattened_data())
+    if not pixels:
+        return 0.0
+    active = sum(1 for pixel in pixels if pixel > 32)
+    return active / len(pixels)
+
+
+def _sample_frames_for_classify(video_path: Path, n: int = 30) -> list:
+    """均匀采样 n 帧（BGR ndarray），用于分类特征计算。"""
+    import cv2
+    import numpy as np
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        return []
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if total_frames <= 0:
+        cap.release()
+        return []
+    indices = np.linspace(0, total_frames - 1, n, dtype=int)
+    frames = []
+    for idx in indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+        ret, frame = cap.read()
+        if ret and frame is not None:
+            frames.append(frame)
+    cap.release()
+    return frames
+
+
+def _compute_scene_rate(video_path: Path, threshold: float = 0.06) -> float:
+    """场景变化点数 / 时长（次/秒）。复用 detect_scene_changes + probe_duration_ms。"""
+    change_points = detect_scene_changes(video_path, threshold)
+    duration_ms = probe_duration_ms(video_path)
+    if duration_ms <= 0:
+        return 0.0
+    return len(change_points) / (duration_ms / 1000.0)
+
+
+def classify_video(video_path: Path) -> VideoType:
+    """两阶段启发式判定视频类型：阶段 1 用固定阈值粗判，阶段 2 按判出类型回设精细参数。
+
+    注：scene_rate 用固定阈值 0.06 而非最终 type 阈值——存在循环依赖（需要 type
+    才能设阈值，需要阈值才能算 scene_rate 判 type）。当前两阶段近似在实践中足以区分
+    talking_head / lecture_slides / movie_cinematic 等大类。
+    """
+    import numpy as np
+    try:
+        frames = _sample_frames_for_classify(video_path, n=30)
+    except Exception:
+        print("  ⚠️  opencv 不可用，视频类型回退 tutorial")
+        return "tutorial"
+    if not frames:
+        return "tutorial"
+    edge_densities = [_edge_density_from_array(f) for f in frames]
+    saturations = [_mean_saturation(f) for f in frames]
+    scene_rate = _compute_scene_rate(video_path)
+    avg_edge = float(np.mean(edge_densities)) if edge_densities else 0.0
+    avg_sat = float(np.mean(saturations)) if saturations else 0.0
+    result = _classify_by_features(scene_rate, avg_edge, avg_sat)
+    print(f"  🎬 视频类型判定：scene_rate={scene_rate:.4f} edge={avg_edge:.4f} sat={avg_sat:.1f} → {result}")
+    return result
+
+
 def detect_scene_changes(video_path: Path, threshold: float) -> list[int]:
     expr = f"select=gt(scene\\,{threshold}),showinfo"
     result = run_command(
@@ -210,13 +545,19 @@ def write_candidate_audit(
 
 
 def _candidate_image_path(candidates_dir: Path, candidate_points: list[int], point: int) -> Path:
+    """Spec 4.8: 兼容两种命名（ffmpeg: candidate_{idx:04d}_{ms}.png / opencv: candidate_{ms}.png）。"""
     try:
         index = candidate_points.index(point) + 1
     except ValueError:
         index = 0
-    if index:
-        return candidates_dir / f"candidate_{index:04d}_{point}.png"
-    return candidates_dir / f"candidate_{point}.png"
+    candidates = [
+        candidates_dir / f"candidate_{index:04d}_{point}.png",  # ffmpeg 命名
+        candidates_dir / f"candidate_{point}.png",              # opencv 命名
+    ]
+    for p in candidates:
+        if p.exists():
+            return p
+    return candidates[0]
 
 
 def _candidate_capture_ms(start_ms: int, end_ms: int, settings: Settings) -> int:
@@ -329,7 +670,7 @@ def extract_frame(video_path: Path, capture_ms: int, output_path: Path, precise:
 def dhash(image_path: Path, hash_size: int = 8) -> int:
     with Image.open(image_path) as image:
         grayscale = image.convert("L").resize((hash_size + 1, hash_size))
-        pixels = list(grayscale.getdata())
+        pixels = list(grayscale.get_flattened_data())
     value = 0
     for row in range(hash_size):
         for col in range(hash_size):
@@ -342,7 +683,7 @@ def dhash(image_path: Path, hash_size: int = 8) -> int:
 def edge_density(image_path: Path) -> float:
     with Image.open(image_path) as image:
         edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
-        pixels = list(edges.getdata())
+        pixels = list(edges.get_flattened_data())
     if not pixels:
         return 0.0
     active = sum(1 for pixel in pixels if pixel > 32)
@@ -434,7 +775,7 @@ def image_change_ratio(image_path: Path, previous_path: Path, threshold: int = 2
         left = current.convert("RGB").resize((320, 240))
         right = previous.convert("RGB").resize((320, 240))
         diff = ImageChops.difference(left, right).convert("L")
-        pixels = list(diff.getdata())
+        pixels = list(diff.get_flattened_data())
     if not pixels:
         return 0.0
     return sum(1 for pixel in pixels if pixel > threshold) / len(pixels)
@@ -583,75 +924,148 @@ def trim_candidates_by_transcript(
     output_dir: Path,
     settings: Settings,
 ) -> SlideSet:
-    """双向去重：按 ASR 段与候选图的时间轴对齐。
+    """按 [Y-W, Y) 窗口选择候选，keep_all 时保留段内全部（按时间顺序），主图评分最高加 _main 标记。
 
-    方向 A（一段话多图 → 留最后一张）：
-        同一 ASR 段内可能有多张候选图，只保留 capture_ms 最大的那张。
-
-    方向 B（一张图多段话 → 归到 capture_ms 所在的那段）：
-        每张图只有一个 capture_ms 时间点，它落在哪个 ASR 段的
-        [start_ms, end_ms) 区间，就只归属那一段。后续 align_sections
-        只把该段文字匹配给这张图，不会出现同一段文字出现在多页的情况。
-
-    无图可匹配的 ASR 段：在中点自动提取一帧。
+    方向 A（一段话多图）：
+        - keep_all=False：选评分最高者 1 张作为主图
+        - keep_all=True：段内所有候选都保留，按时间顺序排列
+    方向 B（一张图多段话）：
+        - 一张图只归属到一个段（左闭右开天然不重叠）
+    段末取帧：talking_head 无候选时 extract_frame 补帧
     """
     if not transcript.segments:
         return candidates
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 方向 A：每个 ASR 段内只保留 capture_ms 最大的候选图
-    seg_to_best_slide: dict[int, Slide] = {}
-    for seg_index, segment in enumerate(transcript.segments):
-        seg_start_ms = segment.start_ms
-        seg_end_ms = segment.end_ms
-        matching = [
-            slide for slide in candidates.slides
-            if seg_start_ms <= slide.capture_ms < seg_end_ms
-        ]
-        if matching:
-            seg_to_best_slide[seg_index] = max(matching, key=lambda s: s.capture_ms)
+    if settings.match_window_sec is not None:
+        window_sec = float(settings.match_window_sec)
+    else:
+        window_sec = _match_window_sec_for_type(settings.video_type)
+    window_ms = int(window_sec * 1000)
 
-    # 方向 B：每张图只归属到 capture_ms 落在的那一段（自然满足，因为一张图只有一个 capture_ms）
-    # 但多段可能选了同一张图，此时需要去重：该图只保留在 capture_ms 所在的段
-    # 先按 capture_ms 归属做一次反向映射
-    image_to_seg: dict[str, int] = {}
-    for seg_index, slide in seg_to_best_slide.items():
-        # 同一张图如果被多个段选中，只保留 capture_ms 准确落在的那一段
-        # 由于上面的匹配逻辑是 seg_start <= capture < seg_end，
-        # 一张图只可能落在一个段里，所以不需要额外去重
-        image_to_seg[slide.image_path] = seg_index
-
-    # 构建结果：为每个 ASR 段分配一张图
     trimmed_slides: list[Slide] = []
     for seg_index, segment in enumerate(transcript.segments):
         seg_start_ms = segment.start_ms
         seg_end_ms = segment.end_ms
-        seg_mid_ms = (seg_start_ms + seg_end_ms) // 2
+        match_start, match_end = _match_window(seg_start_ms, seg_end_ms, window_ms)
 
-        if seg_index in seg_to_best_slide:
-            slide = seg_to_best_slide[seg_index]
-            trimmed_slides.append(
-                Slide(
-                    slide_index=len(trimmed_slides) + 1,
-                    image_path=slide.image_path,
-                    start_ms=slide.start_ms,
-                    end_ms=slide.end_ms,
-                    capture_ms=slide.capture_ms,
-                    confidence=slide.confidence,
-                    hash=slide.hash,
-                    edge_density=slide.edge_density,
-                    ocr_text=slide.ocr_text,
-                )
+        if settings.keep_all_segment_candidates:
+            # keep_all：段内所有候选（左闭右开天然不重叠）
+            matching = [
+                slide for slide in candidates.slides
+                if seg_start_ms <= slide.capture_ms < seg_end_ms
+            ]
+        else:
+            # 默认：优先 [Y-W, Y) 窗口内的候选，窗口为空时回退全段
+            matching = [
+                slide for slide in candidates.slides
+                if match_start <= slide.capture_ms < match_end
+            ]
+            if not matching:
+                matching = [
+                    slide for slide in candidates.slides
+                    if seg_start_ms <= slide.capture_ms < seg_end_ms
+                ]
+
+        if not matching:
+            if settings.video_type == "talking_head":
+                # talking_head 无候选时段末补帧
+                end_capture_ms = max(seg_start_ms, seg_end_ms - 500)
+                img_path = output_dir / f"trim_end_{seg_index:03d}_{end_capture_ms}.png"
+                extract_frame(video_path, end_capture_ms, img_path, precise=True)
+                try:
+                    slide_hash = f"{dhash(img_path):016x}" if img_path.exists() else "0" * 16
+                except Exception:
+                    slide_hash = "0" * 16
+                try:
+                    slide_edge = edge_density(img_path) if img_path.exists() else 0.0
+                except Exception:
+                    slide_edge = 0.0
+                matching = [Slide(
+                    slide_index=seg_index + 1,
+                    image_path=str(img_path),
+                    start_ms=seg_start_ms, end_ms=seg_end_ms,
+                    capture_ms=end_capture_ms, confidence=0.3,
+                    hash=slide_hash, edge_density=slide_edge,
+                )]
+            else:
+                continue  # 非 talking_head 且无候选：跳过（由 align 归并）
+
+        # 按时间顺序排序
+        matching.sort(key=lambda s: s.capture_ms)
+
+        if settings.keep_all_segment_candidates:
+            # 保留全部：每张都生成 trimmed slide，主图加 _main 标记
+            # 加载 OCR 文本用于评分（候选 slides 在 detect_slides 阶段未跑 OCR）
+            for s in matching:
+                _get_slide_ocr_text(s)
+            main_slide = _pick_main_candidate(
+                matching, segment.text,
+                settings.main_score_edge_weight, settings.main_score_ocr_weight,
             )
-        # 无候选图的 ASR 段不补帧：auto 模式逐段补帧会导致每句一页的碎片化，
-        # 改由 align_sections 将无图段文字归并到最近的候选图所在页。
+            for intra_idx, slide in enumerate(matching):
+                is_main = slide is main_slide
+                new_name = _build_image_name(
+                    seg_index=seg_index,
+                    intra_index=intra_idx,
+                    capture_ms=slide.capture_ms,
+                    is_main=is_main,
+                    single=False,
+                )
+                old_path = Path(slide.image_path)
+                new_path = output_dir / new_name
+                if old_path.exists() and old_path != new_path:
+                    try:
+                        if new_path.exists():
+                            new_path.unlink()
+                        new_path.hardlink_to(old_path.resolve())
+                    except OSError:
+                        shutil.copy2(str(old_path), str(new_path))
+                trimmed_slides.append(Slide(
+                    slide_index=len(trimmed_slides) + 1,
+                    image_path=str(new_path) if new_path.exists() else slide.image_path,
+                    start_ms=seg_start_ms, end_ms=seg_end_ms,
+                    capture_ms=slide.capture_ms, confidence=slide.confidence,
+                    hash=slide.hash, edge_density=slide.edge_density,
+                    ocr_text=slide.ocr_text,
+                ))
+        else:
+            # 默认：选评分最高者 1 张
+            # 加载 OCR 文本用于评分（候选 slides 在 detect_slides 阶段未跑 OCR）
+            for s in matching:
+                _get_slide_ocr_text(s)
+            main_slide = _pick_main_candidate(
+                matching, segment.text,
+                settings.main_score_edge_weight, settings.main_score_ocr_weight,
+            )
+            new_name = _build_image_name(
+                seg_index=seg_index, intra_index=0,
+                capture_ms=main_slide.capture_ms, is_main=True, single=True,
+            )
+            old_path = Path(main_slide.image_path)
+            new_path = output_dir / new_name
+            if old_path.exists() and old_path != new_path:
+                try:
+                    if new_path.exists():
+                        new_path.unlink()
+                    new_path.hardlink_to(old_path.resolve())
+                except OSError:
+                    shutil.copy2(str(old_path), str(new_path))
+            trimmed_slides.append(Slide(
+                slide_index=len(trimmed_slides) + 1,
+                image_path=str(new_path) if new_path.exists() else main_slide.image_path,
+                start_ms=seg_start_ms, end_ms=seg_end_ms,
+                capture_ms=main_slide.capture_ms, confidence=main_slide.confidence,
+                hash=main_slide.hash, edge_density=main_slide.edge_density,
+                ocr_text=main_slide.ocr_text,
+            ))
 
     metadata = dict(candidates.metadata)
     metadata["trimmed_by_transcript"] = True
     metadata["segment_count"] = len(transcript.segments)
     metadata["trimmed_slide_count"] = len(trimmed_slides)
-
+    metadata["keep_all_segment_candidates"] = settings.keep_all_segment_candidates
     return SlideSet(slides=trimmed_slides, metadata=metadata)
 
 

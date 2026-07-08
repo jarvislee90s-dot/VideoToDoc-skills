@@ -18,6 +18,7 @@ from .io import read_json, write_json
 from .models import ProcessResult, Section, Slide, SlideSet, to_plain_dict
 from .quality import write_quality_report
 from .slides import (
+    classify_video,
     cross_segment_dedupe,
     deduplicate_slides,
     detect_slides,
@@ -61,6 +62,10 @@ def capture_video(
     """capture 阶段：提取音频 + ASR + 时长密度截图 + 生成分段草案。"""
     ensure_file(video_path, "视频文件")
     force_rebuild = force_rebuild or set()
+
+    # auto 时自动判定视频类型
+    if settings.video_type == "auto":
+        settings.video_type = classify_video(video_path)
 
     slug = slugify(video_path.stem)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -330,6 +335,10 @@ def process_video(
     ensure_file(video_path, "视频文件")
     force_rebuild = force_rebuild or set()
 
+    # auto 时自动判定视频类型（影响 detect_slides 场景阈值 + trim 段末取帧策略）
+    if settings.video_type == "auto":
+        settings.video_type = classify_video(video_path)
+
     # run_dir 外部传入时（复用 video-summary 目录），优先从 run_dir 名推断标题
     if run_dir is not None:
         run_dir = run_dir.resolve()
@@ -494,9 +503,14 @@ def materialize_selected_slides(slides: SlideSet, output_dir: Path) -> SlideSet:
     """
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    semantic_pattern = re.compile(r"^p\d{2}_\d{2}(?:_main|_cand)?_\d+\.\d+s\.png$")
     for index, slide in enumerate(slides.slides, start=1):
         source = Path(slide.image_path)
-        target = output_dir / f"{index:04d}{source.suffix or '.png'}"
+        # 保留 trim 阶段生成的语义命名（spec 4.6），否则用顺序编号
+        if semantic_pattern.match(source.name):
+            target = output_dir / source.name
+        else:
+            target = output_dir / f"{index:04d}{source.suffix or '.png'}"
         if source.resolve() != target.resolve():
             shutil.copy2(source, target)
         slide.slide_index = index

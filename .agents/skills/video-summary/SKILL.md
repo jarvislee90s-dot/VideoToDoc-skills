@@ -42,7 +42,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
    - **无字幕**：继续下载视频
 
 3. **下载视频**（仅 URL 输入且无字幕时）：
-   - 使用 `yt-dlp` 下载视频到 `runs/<视频标题>_<时间戳>/video.mp4`
+   - 使用 `yt-dlp` 下载视频到 `runs/<视频标题>_<时间戳>/<视频标题>.mp4`
    - B站需 `curl_cffi` 处理 TLS 指纹
 
 4. **音频提取**（需要 ASR 时）：
@@ -59,30 +59,31 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
      - 按主题分段，使用二级/三级标题
      - 保留重要细节（数字、专有名词、关键论据）
      - 用列表和引用块突出要点
+   - **注意**：脚本只创建占位 `summary.md`（含明确提示），不会自动生成摘要正文，Agent 必须按上述要点补写
 
 ## 默认命令
 
 ```bash
 # URL 输入（优先获取字幕）
-python3 scripts/process.py "https://www.youtube.com/watch?v=xxx"
+python3 .agents/skills/video-summary/scripts/process.py "https://www.youtube.com/watch?v=xxx"
 
 # 本地视频
-python3 scripts/process.py "/path/to/video.mp4"
+python3 .agents/skills/video-summary/scripts/process.py "/path/to/video.mp4"
 
 # 强制跳过字幕，使用 ASR
-python3 scripts/process.py "https://www.youtube.com/watch?v=xxx" --no-subtitle
+python3 .agents/skills/video-summary/scripts/process.py "https://www.youtube.com/watch?v=xxx" --no-subtitle
 
 # 诊断依赖
-python3 scripts/process.py doctor
+python3 .agents/skills/video-summary/scripts/process.py doctor
 ```
 
 ### 常用参数
 
 ```bash
-python3 scripts/process.py "<URL>" --language zh
-python3 scripts/process.py "<URL>" --no-subtitle    # 跳过字幕，强制 ASR
-python3 scripts/process.py "<URL>" --cleanup all     # 清理中间文件
-python3 scripts/process.py "/path/to/video.mp4" --output-dir ./runs
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --language zh
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --no-subtitle    # 跳过字幕，强制 ASR
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --cleanup all     # 清理中间文件
+python3 .agents/skills/video-summary/scripts/process.py "/path/to/video.mp4" --output-dir ./runs
 ```
 
 ## 参数说明
@@ -109,7 +110,16 @@ runs/<视频标题>_<时间戳>/
 └── <视频标题>_总结_<时间戳>.md            # Agent 生成的摘要
 ```
 
-**注意**：如果成功获取字幕，`video.mp4` 和 `audio.wav` 不会生成。
+**注意**：如果成功获取字幕，`<视频标题>.mp4` 和 `audio.wav` 不会生成。
+
+### 标题与文件名说明
+
+run_dir 名称与下载的视频文件名都会经过 `_slugify()` 处理：
+
+- 文件系统不安全字符（`/` `:` `?` `*` `<` `>` `"` `|` `\` 等）会被替换为 `_`
+- 替换后标题信息可能有损，例如 `Skill/MCP/RAG/Agent/OpenClaw` 会被规范化为 `Skill_MCP_RAG_Agent_OpenClaw`
+- 替换仅影响文件/目录命名，不影响 `transcript.json` 中保留的原始视频标题语义
+- 实际示例（BV1ojfDBSEPv）：原始标题「【闪客】一口气拆穿Skill/MCP/RAG/Agent/OpenClaw底层逻辑」→ run_dir `【闪客】一口气拆穿Skill_MCP_RAG_Agent_OpenClaw底层逻辑_<时间戳>`
 
 ## 与其他 Skill 的关系
 
@@ -134,7 +144,7 @@ export VIDEO_SUMMARY_PROXY_MAP="example.com:127.0.0.1:8080;other.site:127.0.0.1:
 或命令行直接指定：
 
 ```bash
-python3 scripts/process.py "<URL>" --proxy "http://127.0.0.1:8080"
+python3 .agents/skills/video-summary/scripts/process.py "<URL>" --proxy "http://127.0.0.1:8080"
 ```
 
 优先级：命令行 `--proxy` > 环境变量站点映射 > 无代理
@@ -147,7 +157,7 @@ B站视频需要 `buvid3/buvid4` 指纹 cookies 才能下载。脚本会自动�
 - 安装 `curl_cffi`：`pip install curl_cffi`
 - **使用代理**：B站下载通常需要代理才能成功，请在命令中添加 `--proxy` 参数：
   ```bash
-  python3 scripts/process.py "<B站URL>" --proxy "http://127.0.0.1:7890"
+  python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --proxy "http://127.0.0.1:7890"
   ```
 - 等 yt-dlp 上游修复后升级：`pip install -U yt-dlp`
 
@@ -159,7 +169,7 @@ B站视频需要 `buvid3/buvid4` 指纹 cookies 才能下载。脚本会自动�
 
 ```bash
 # 412 时用浏览器 cookies 重试
-python3 scripts/process.py "<B站URL>" --cookies-from-browser chrome
+python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --cookies-from-browser chrome
 ```
 
 ## 异常处理

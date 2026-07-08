@@ -19,7 +19,11 @@ def render_original_markdown(title: str, sections: list[Section], output_path: P
                 "",
                 f"时间：{_format_ms(section.start_ms)} - {_format_ms(section.end_ms)}",
                 "",
-                f"![第 {section.slide_index} 页]({_markdown_image_path(section.image_path, output_path.parent)})",
+                # 多图按 capture_ms 时间顺序渲染（image_paths 已按时间升序，主图带 _main 标记）
+                *[
+                    f"![{Path(p).stem}]({_markdown_image_path(p, output_path.parent)})"
+                    for p in (section.image_paths or [section.image_path])
+                ],
                 "",
                 section.transcript.strip() or "本页无讲解。",
                 "",
@@ -39,16 +43,15 @@ def render_compact_markdown(
 ) -> Path:
     lines = [f"# {title}", "", "## 图文讲义", ""]
     for index, section in enumerate(sections):
-        lines.extend(
-            [
-                f"### 第 {section.slide_index} 页 · {_format_ms(section.start_ms)} - {_format_ms(section.end_ms)}",
-                "",
-                f"![第 {section.slide_index} 页]({_markdown_image_path(section.image_path, output_path.parent)})",
-                "",
-                _compact_transcript(section.transcript),
-                "",
-            ]
-        )
+        lines.append(f"### 第 {section.slide_index} 页 · {_format_ms(section.start_ms)} - {_format_ms(section.end_ms)}")
+        lines.append("")
+        # 多图按时间顺序渲染（image_paths 按时间升序，主图带 _main 标记）
+        image_paths = section.image_paths or [section.image_path]
+        for img_path in image_paths:
+            lines.append(f"![{Path(img_path).stem}]({_markdown_image_path(img_path, output_path.parent)})")
+        lines.append("")
+        lines.append(_compact_transcript(section.transcript))
+        lines.append("")
         if section.notes:
             lines.extend([f"> 标记：{', '.join(section.notes)}", ""])
         if index != len(sections) - 1:
@@ -76,16 +79,18 @@ def ensure_semantic_markdown(
         "",
     ]
     for index, section in enumerate(sections):
-        lines.extend(
-            [
-                f"### 第 {section.slide_index} 页 · {_format_ms(section.start_ms)} - {_format_ms(section.end_ms)}",
-                "",
-                f"<!-- IMAGE:{section.slide_index} -->",
-                "",
-                _compact_transcript(section.transcript),
-                "",
-            ]
-        )
+        lines.append(f"### 第 {section.slide_index} 页 · {_format_ms(section.start_ms)} - {_format_ms(section.end_ms)}")
+        lines.append("")
+        # 多图占位符：IMAGE:N-M[:main]，M=段内顺序号，主图加 :main
+        image_paths = section.image_paths or [section.image_path]
+        for intra_idx, img_path in enumerate(image_paths, start=1):
+            stem = Path(img_path).stem
+            is_main = "_main_" in stem
+            suffix = ":main" if is_main else ""
+            lines.append(f"<!-- IMAGE:{section.slide_index}-{intra_idx}{suffix} -->")
+        lines.append("")
+        lines.append(_compact_transcript(section.transcript))
+        lines.append("")
         if index != len(sections) - 1:
             lines.extend(["---", ""])
     write_text(output_path, "\n".join(lines).rstrip() + "\n")
