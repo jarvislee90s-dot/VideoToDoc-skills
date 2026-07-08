@@ -9,6 +9,9 @@ curl_cffi
 # video-to-slides dependencies
 python-docx
 rapidocr
+opencv-python>=4.8.0
+numpy>=1.24.0
+Pillow>=10.0.0
 
 # feishu-markdown-publish dependencies
 # (no additional Python deps, uses lark-cli)

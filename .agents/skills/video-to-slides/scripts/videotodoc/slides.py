@@ -86,7 +86,7 @@ def detect_slides(video_path: Path, output_dir: Path, output_json: Path, setting
                 name_template="candidate_{ms}.png",
             )
         except Exception:
-            pass  # 回退到 _extract_candidate 里的 extract_frame
+            print("  ⚠️  opencv 批量截图失败，回退 ffmpeg 逐帧截取")
 
     task_args = [(i, s, e) for i, (s, e) in enumerate(boundaries)]
     precomputed: dict[int, tuple[int, int, Path, int, float]] = {}
@@ -431,7 +431,7 @@ def _edge_density_from_array(frame_bgr) -> float:
     rgb = frame_bgr[:, :, ::-1].copy()
     image = Image.fromarray(rgb)
     edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
-    pixels = list(edges.getdata())
+    pixels = list(edges.get_flattened_data())
     if not pixels:
         return 0.0
     active = sum(1 for pixel in pixels if pixel > 32)
@@ -470,9 +470,18 @@ def _compute_scene_rate(video_path: Path, threshold: float = 0.06) -> float:
 
 
 def classify_video(video_path: Path) -> VideoType:
-    """采样帧 + 场景变化率 → 判定视频类型。无帧时回退 tutorial。"""
+    """两阶段启发式判定视频类型：阶段 1 用固定阈值粗判，阶段 2 按判出类型回设精细参数。
+
+    注：scene_rate 用固定阈值 0.06 而非最终 type 阈值——存在循环依赖（需要 type
+    才能设阈值，需要阈值才能算 scene_rate 判 type）。当前两阶段近似在实践中足以区分
+    talking_head / lecture_slides / movie_cinematic 等大类。
+    """
     import numpy as np
-    frames = _sample_frames_for_classify(video_path, n=30)
+    try:
+        frames = _sample_frames_for_classify(video_path, n=30)
+    except Exception:
+        print("  ⚠️  opencv 不可用，视频类型回退 tutorial")
+        return "tutorial"
     if not frames:
         return "tutorial"
     edge_densities = [_edge_density_from_array(f) for f in frames]
@@ -661,7 +670,7 @@ def extract_frame(video_path: Path, capture_ms: int, output_path: Path, precise:
 def dhash(image_path: Path, hash_size: int = 8) -> int:
     with Image.open(image_path) as image:
         grayscale = image.convert("L").resize((hash_size + 1, hash_size))
-        pixels = list(grayscale.getdata())
+        pixels = list(grayscale.get_flattened_data())
     value = 0
     for row in range(hash_size):
         for col in range(hash_size):
@@ -674,7 +683,7 @@ def dhash(image_path: Path, hash_size: int = 8) -> int:
 def edge_density(image_path: Path) -> float:
     with Image.open(image_path) as image:
         edges = image.convert("L").filter(ImageFilter.FIND_EDGES)
-        pixels = list(edges.getdata())
+        pixels = list(edges.get_flattened_data())
     if not pixels:
         return 0.0
     active = sum(1 for pixel in pixels if pixel > 32)
@@ -766,7 +775,7 @@ def image_change_ratio(image_path: Path, previous_path: Path, threshold: int = 2
         left = current.convert("RGB").resize((320, 240))
         right = previous.convert("RGB").resize((320, 240))
         diff = ImageChops.difference(left, right).convert("L")
-        pixels = list(diff.getdata())
+        pixels = list(diff.get_flattened_data())
     if not pixels:
         return 0.0
     return sum(1 for pixel in pixels if pixel > threshold) / len(pixels)
@@ -988,6 +997,9 @@ def trim_candidates_by_transcript(
 
         if settings.keep_all_segment_candidates:
             # 保留全部：每张都生成 trimmed slide，主图加 _main 标记
+            # 加载 OCR 文本用于评分（候选 slides 在 detect_slides 阶段未跑 OCR）
+            for s in matching:
+                _get_slide_ocr_text(s)
             main_slide = _pick_main_candidate(
                 matching, segment.text,
                 settings.main_score_edge_weight, settings.main_score_ocr_weight,
@@ -1020,6 +1032,9 @@ def trim_candidates_by_transcript(
                 ))
         else:
             # 默认：选评分最高者 1 张
+            # 加载 OCR 文本用于评分（候选 slides 在 detect_slides 阶段未跑 OCR）
+            for s in matching:
+                _get_slide_ocr_text(s)
             main_slide = _pick_main_candidate(
                 matching, segment.text,
                 settings.main_score_edge_weight, settings.main_score_ocr_weight,

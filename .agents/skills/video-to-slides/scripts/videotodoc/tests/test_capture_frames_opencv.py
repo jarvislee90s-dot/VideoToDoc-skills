@@ -1,6 +1,7 @@
-"""opencv 批量截图测试（任务 7）。"""
+"""opencv 批量截图测试（任务 7）——需要 opencv 环境，无 opencv 时自动跳过。"""
 
-import cv2
+import pytest
+cv2 = pytest.importorskip("cv2", reason="opencv-python 未安装，跳过 opencv 测试")
 import numpy as np
 from pathlib import Path
 
