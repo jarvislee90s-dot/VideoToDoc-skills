@@ -13,6 +13,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
+if sys.platform == "win32":
+    for _s in (sys.stdout, sys.stderr):
+        if _s and hasattr(_s, "reconfigure"):
+            try:
+                _s.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 # finalize.py 与 restore_images.py / render_mindmap.py 同处 scripts/ 目录
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 

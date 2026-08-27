@@ -12,6 +12,15 @@ from pathlib import Path
 
 from _project import find_project_dir, project_python
 
+# Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
+if sys.platform == "win32":
+    for _s in (sys.stdout, sys.stderr):
+        if _s and hasattr(_s, "reconfigure"):
+            try:
+                _s.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 
 def _infer_run_dir(video_path: Path) -> Path | None:
     """当视频路径本身位于 runs/<标题>_<时间戳>/ 下时，自动推断复用该 run_dir。"""
@@ -27,7 +36,7 @@ def main() -> int:
     )
     parser.add_argument("video", type=Path, help="视频文件路径")
     parser.add_argument("--project-dir", type=Path, default=None, help="VideoToDoc 项目根目录（默认自动检测）")
-    parser.add_argument("--asr", default="mlx-whisper", help="ASR 后端（默认 mlx-whisper）")
+    parser.add_argument("--asr", default="auto", help="ASR 后端：auto 自动探测（默认）/ mlx-whisper / faster-whisper")
     parser.add_argument("--model", default=None, help="ASR 模型名称")
     parser.add_argument("--transcript", type=Path, default=None, help="已有转录文件路径（跳过 ASR）")
     parser.add_argument("--capture-mode", choices=["fast", "fine", "audit", "complete"], default="audit")

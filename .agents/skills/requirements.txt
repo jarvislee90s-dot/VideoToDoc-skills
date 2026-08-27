@@ -3,7 +3,9 @@
 # video-summary dependencies
 yt-dlp>=2024.1.0
 pycryptodomex
-mlx-whisper
+# mlx-whisper 仅支持 Apple Silicon；Windows/Linux 请用 faster-whisper（process.py 自动探测，mlx 不可用时降级）
+# mlx-whisper
+faster-whisper
 curl_cffi
 
 # video-to-slides dependencies

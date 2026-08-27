@@ -16,11 +16,11 @@ DEFAULT_PROMPT = """这是一个课程/讲座录音，主要为中文讲解，�
 class Settings:
     """VideoToDoc 的运行配置。
 
-    默认值偏向 Apple Silicon 本地运行：`mlx-whisper` 负责真实转录，
-    Agent 负责摘要/思维导图等智能整理，不强制依赖外部 LLM key。
+    默认值偏向自动探测：Apple Silicon 用 `mlx-whisper`，Windows/Linux 自动降级
+    到 `faster-whisper`；Agent 负责摘要/思维导图等智能整理，不强制依赖外部 LLM key。
     """
 
-    asr_backend: str = "mlx-whisper"
+    asr_backend: str = "auto"
     asr_model: str = "mlx-community/whisper-large-v3-turbo"
     language: str = "zh"
     audio_profile: str = "auto"

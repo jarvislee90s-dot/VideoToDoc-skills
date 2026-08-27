@@ -18,7 +18,7 @@ description: "在已有视频、音频、字幕的前提下，自动截图去重
 ## 环境前置
 
 - **网络访问**：下载视频、获取字幕需网络访问权，沙箱内 DNS 不可用时需提权运行
-- **ASR 转录**：mlx-whisper 需 Apple Silicon Metal GPU，沙箱内不可用；可用 `--transcript` 复用已有转录跳过 ASR
+- **ASR 转录**：默认 `auto` 自动探测——Apple Silicon 用 mlx-whisper（Metal GPU），Windows/Linux 降级 faster-whisper；可用 `--transcript` 复用已有转录跳过 ASR
 - **ffmpeg**：截图、音频提取依赖 ffmpeg（`brew install ffmpeg`）
 - **doctor 命令**：Metal 不可用时优雅降级报告，不再崩溃
 
@@ -76,7 +76,7 @@ flowchart TB
         B -- 有 --> C[yt-dlp 下载字幕]
         B -- 无 / 本地 --> D[下载视频 / 提取音频]
         D --> E[ffmpeg 提取 audio.wav]
-        E --> F[mlx-whisper ASR]
+        E --> F[ASR 自动探测<br/>mlx-whisper / faster-whisper]
         C --> G[transcript.json]
         F --> G
     end
@@ -304,7 +304,7 @@ python3 .agents/skills/video-to-slides/scripts/process.py \
 | --------------------------------- | --------------- | ------------------------------------------------------------------------------------ |
 | `video`                         | （必填）        | 视频文件路径                                                                         |
 | `--project-dir`                 | 自动检测        | VideoToDoc 项目根目录                                                                |
-| `--asr`                         | `mlx-whisper` | ASR 后端                                                                             |
+| `--asr`                         | `auto`        | ASR 后端：auto 自动探测（默认）/ mlx-whisper / faster-whisper                          |
 | `--transcript`                  | `None`        | 已有转录文件路径（跳过 ASR）                                                         |
 | `--capture-mode`                | `audit`       | 截图模式：fast/fine/audit                                                            |
 | `--fallback-interval-sec`       | `15`          | 兜底截图间隔秒数                                                                     |

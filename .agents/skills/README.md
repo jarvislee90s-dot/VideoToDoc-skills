@@ -216,7 +216,8 @@ skills/
 ```
 yt-dlp>=2024.1.0
 pycryptodomex
-mlx-whisper
+faster-whisper        # Windows/Linux 默认 ASR 后端
+# mlx-whisper         # Apple Silicon 专用（macOS），自动探测优先使用
 curl_cffi
 browser_cookie3          # 可选：B站风控降级读取浏览器 cookies
 python-docx
@@ -232,9 +233,10 @@ rapidocr
 
 ## 环境要求
 
-- **操作系统**：macOS（推荐，Apple Silicon 优化）/ Linux
-- **Python**：3.10+
-- **硬件**：建议 16GB+ 内存（mlx-whisper ASR 需要）
+- **操作系统**：macOS（推荐，Apple Silicon 优化）/ Windows / Linux
+- **Python**：3.10+（Windows 建议 3.12，依赖 wheel 最全）
+- **硬件**：建议 16GB+ 内存（ASR 模型加载需要）
+- **ASR 后端**：macOS 自动用 `mlx-whisper`（Metal GPU），Windows/Linux 自动降级 `faster-whisper`
 
 ## 贡献指南
 

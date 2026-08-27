@@ -14,7 +14,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 
+# Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
+if sys.platform == "win32":
+    for _s in (sys.stdout, sys.stderr):
+        if _s and hasattr(_s, "reconfigure"):
+            try:
+                _s.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 from _project import find_project_dir
+
+
+def _lark_cli_command() -> str:
+    """Windows 上 npm 生成的是 lark-cli.cmd，subprocess 直接找 lark-cli 会失败。"""
+    import shutil
+    return shutil.which("lark-cli.cmd") or "lark-cli"
 
 
 @dataclass
@@ -126,7 +141,7 @@ class Publisher:
 
     def create_doc(self, title: str, markdown_path: Path, wiki_space: str | None) -> str:
         cmd = [
-            "lark-cli", "docs", "+create",
+            _lark_cli_command(), "docs", "+create",
             "--api-version", "v2",
             "--doc-format", "markdown",
             "--content", f"@{self._cli_path(markdown_path)}",
@@ -145,7 +160,7 @@ class Publisher:
 
     def update_doc(self, doc_ref: str, markdown_path: Path, mode: str) -> None:
         cmd = [
-            "lark-cli", "docs", "+update",
+            _lark_cli_command(), "docs", "+update",
             "--api-version", "v2",
             "--doc", doc_ref, "--command", mode,
             "--doc-format", "markdown",
@@ -166,7 +181,7 @@ class Publisher:
             return
         staged = self._stage_image(image_path)
         cmd = [
-            "lark-cli", "docs", "+media-insert",
+            _lark_cli_command(), "docs", "+media-insert",
             "--doc", doc_ref, "--file", self._cli_path(staged),
             "--type", "image", "--align", "center", "--caption", caption,
             "--as", self.identity,

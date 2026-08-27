@@ -1,6 +1,6 @@
 # VideoToDoc
 
-VideoToDoc 是一个面向课程、讲座、培训视频的本地工作流：提取音频、用 Apple Silicon 友好的 `mlx-whisper` 转录文字，自动截取 PPT/讲义页面，把截图和讲稿对齐，生成 Word、Markdown、Mermaid 思维导图。
+VideoToDoc 是一个面向课程、讲座、培训视频的本地工作流：提取音频、用 Whisper 转录文字（Apple Silicon 用 `mlx-whisper`，Windows/Linux 自动降级 `faster-whisper`），自动截取 PPT/讲义页面，把截图和讲稿对齐，生成 Word、Markdown、Mermaid 思维导图。
 
 项目提供 Claude Code Skill 源文件，让 Agent 可以通过自然语言触发完整流程。
 
@@ -17,7 +17,7 @@ VideoToDoc 是一个面向课程、讲座、培训视频的本地工作流：提
 ### 三步把任意视频变成团队知识
 
 ```bash
-# 1. 视频转文字(URL 或本地路径,字幕优先,无字幕走 mlx-whisper)
+# 1. 视频转文字(URL 或本地路径,字幕优先,无字幕走 ASR 自动探测:mlx-whisper / faster-whisper)
 python3 .agents/skills/video-summary/scripts/process.py "<视频URL>"
 
 # 2. 视频 + transcript → 截图去重 + 图文对齐 + Markdown/Word/思维导图
@@ -92,6 +92,7 @@ python3 .agents/skills/video-summary/scripts/prepare_merge.py \
 ## 安装依赖
 
 ```bash
+# ASR：Apple Silicon 装 mlx-whisper；Windows/Linux 装 faster-whisper（任一即可，脚本自动探测）
 pip install mlx-whisper python-docx Pillow curl_cffi yt-dlp opencv-python numpy rapidocr
 
 # 思维导图渲染需要 mermaid-cli

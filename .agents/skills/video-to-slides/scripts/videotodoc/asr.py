@@ -23,6 +23,13 @@ def transcribe_audio(audio_path: Path, output_path: Path, settings: Settings, fo
         return transcript_from_dict(read_json(output_path))
 
     backend = settings.asr_backend.lower()
+    if backend == "auto":
+        # 自动探测：Apple Silicon 优先 mlx-whisper，其余平台用 faster-whisper
+        try:
+            import mlx_whisper  # type: ignore
+            backend = "mlx-whisper"
+        except (ModuleNotFoundError, RuntimeError):
+            backend = "faster-whisper"
     if backend in {"mlx-whisper", "mlx_whisper", "mlx"}:
         transcript = _mlx_whisper(audio_path, settings)
     elif backend == "faster-whisper":

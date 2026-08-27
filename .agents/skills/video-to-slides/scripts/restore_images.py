@@ -14,6 +14,15 @@ import re
 import sys
 from pathlib import Path
 
+# Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
+if sys.platform == "win32":
+    for _s in (sys.stdout, sys.stderr):
+        if _s and hasattr(_s, "reconfigure"):
+            try:
+                _s.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 
 def extract_images_from_compact(compact_path: Path) -> dict[int, list[str]]:
     """从紧凑版提取每页的所有图片路径（按时间顺序）。"""

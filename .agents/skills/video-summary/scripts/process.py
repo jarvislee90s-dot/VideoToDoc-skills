@@ -28,6 +28,15 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+# Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
+if sys.platform == "win32":
+    for _s in (sys.stdout, sys.stderr):
+        if _s and hasattr(_s, "reconfigure"):
+            try:
+                _s.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
 
 def _seconds_to_ms(seconds: float) -> int:
     return max(0, int(round(float(seconds) * 1000)))
@@ -146,11 +155,22 @@ def check_dependencies(fatal: bool = True, check_asr: bool = False, check_downlo
             )
 
     if check_asr:
+        asr_notes = []
+        asr_ok = False
         try:
             import mlx_whisper  # noqa: F401
-            results.append(("mlx-whisper", "pip install mlx-whisper", True))
+            asr_ok = True
+            asr_notes.append("mlx-whisper 可用")
         except (ModuleNotFoundError, RuntimeError) as e:
-            results.append(("mlx-whisper", f"pip install mlx-whisper（当前不可用：{type(e).__name__}）", False))
+            asr_notes.append(f"mlx-whisper 不可用（{type(e).__name__}）")
+        try:
+            import faster_whisper  # noqa: F401
+            asr_ok = True
+            asr_notes.append("faster-whisper 可用")
+        except (ModuleNotFoundError, RuntimeError) as e:
+            asr_notes.append(f"faster-whisper 不可用（{type(e).__name__}）")
+        results.append(("ASR后端(mlx-whisper/faster-whisper)", "pip install mlx-whisper / faster-whisper（任一可用即可）", asr_ok))
+        results.append(("  " + "；".join(asr_notes), "—", asr_ok))
 
     try:
         from curl_cffi import requests as _  # noqa: F401
@@ -762,10 +782,21 @@ def extract_audio(video_path: Path, run_dir: Path) -> Path:
 # ── ASR 转录 ────────────────────────────────────────────────
 
 
-def transcribe_audio(audio_path: Path, run_dir: Path, model: str, language: str = "zh") -> None:
-    """使用 mlx-whisper 转录音频"""
-    import mlx_whisper
+def _resolve_whisper_model(model: str, backend: str) -> str:
+    """将 mlx-whisper 模型名映射为 faster-whisper 可用的模型名。
 
+    例如 `mlx-community/whisper-large-v3-turbo` → `large-v3-turbo`；
+    openai 原生模型名（`large-v3` 等）原样返回。
+    """
+    if backend != "faster-whisper":
+        return model
+    if "/" in model:
+        model = model.rsplit("/", 1)[-1]
+    return model[len("whisper-"):] if model.startswith("whisper-") else model
+
+
+def transcribe_audio(audio_path: Path, run_dir: Path, model: str, language: str = "zh", backend: str = "auto") -> None:
+    """转录音频：优先 mlx-whisper（Apple Silicon），其他平台自动 fallback 到 faster-whisper"""
     transcript_json_path = run_dir / "transcript.json"
     transcript_txt_path = run_dir / "transcript.txt"
 
@@ -774,15 +805,35 @@ def transcribe_audio(audio_path: Path, run_dir: Path, model: str, language: str 
         return
 
     print(f"  🎙️  ASR 转录...")
-    result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=model, language=language)
 
-    segments = []
-    for seg in result.get("segments", []):
-        segments.append({
-            "start": seg.get("start"),
-            "end": seg.get("end"),
-            "text": seg.get("text", "").strip(),
-        })
+    # 后端探测：auto = 有 mlx 用 mlx，否则 faster-whisper
+    use_backend = backend
+    if use_backend == "auto":
+        try:
+            import mlx_whisper  # noqa: F401
+            use_backend = "mlx-whisper"
+        except (ModuleNotFoundError, RuntimeError):
+            use_backend = "faster-whisper"
+
+    if use_backend == "mlx-whisper":
+        import mlx_whisper
+        result = mlx_whisper.transcribe(str(audio_path), path_or_hf_repo=model, language=language)
+        segments = [
+            {"start": seg.get("start"), "end": seg.get("end"), "text": str(seg.get("text", "")).strip()}
+            for seg in result.get("segments", [])
+        ]
+        backend_name = "mlx-whisper"
+    else:
+        from faster_whisper import WhisperModel
+        fw_model = _resolve_whisper_model(model, "faster-whisper")
+        print(f"  🎙️  faster-whisper 模型：{fw_model}")
+        wmodel = WhisperModel(fw_model, device="auto", compute_type="auto")
+        seg_iter, _info = wmodel.transcribe(str(audio_path), language=language)
+        segments = [
+            {"start": seg.start, "end": seg.end, "text": seg.text.strip()}
+            for seg in seg_iter
+        ]
+        backend_name = "faster-whisper"
 
     # 统一为 dict+毫秒 schema，与字幕路径保持一致（避免跨 skill 格式分歧）
     normalized = [
@@ -796,7 +847,7 @@ def transcribe_audio(audio_path: Path, run_dir: Path, model: str, language: str 
     transcript_data = {
         "segments": normalized,
         "language": language,
-        "backend": "mlx-whisper",
+        "backend": backend_name,
     }
     transcript_json_path.write_text(json.dumps(transcript_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -932,7 +983,7 @@ def cmd_process(args: argparse.Namespace) -> None:
             video_path = download_video(user_input, run_dir, title, args.proxy,
                                         cookies_from_browser=getattr(args, 'cookies_from_browser', None))
             audio_path = extract_audio(video_path, run_dir)
-            transcribe_audio(audio_path, run_dir, args.asr_model, args.language)
+            transcribe_audio(audio_path, run_dir, args.asr_model, args.language, args.asr_backend)
             _print_merge_hint(transcript_json_path)
 
     else:
@@ -955,7 +1006,7 @@ def cmd_process(args: argparse.Namespace) -> None:
                 print(f"  📋 已复制视频：{run_video.name}")
 
         audio_path = extract_audio(run_video, run_dir)
-        transcribe_audio(audio_path, run_dir, args.asr_model, args.language)
+        transcribe_audio(audio_path, run_dir, args.asr_model, args.language, args.asr_backend)
         _print_merge_hint(transcript_json_path)
 
     # 生成最终摘要文件：视频标题_总结_时间戳.md
@@ -992,7 +1043,10 @@ def _build_arg_parser():
     )
     parser.add_argument("input", nargs="?", help="视频 URL 或本地文件路径；也可传 doctor 诊断")
     parser.add_argument("--output-dir", default="./runs", help="产物目录（默认 ./runs）")
-    parser.add_argument("--asr-model", default="mlx-community/whisper-large-v3-turbo", help="mlx-whisper 模型")
+    parser.add_argument("--asr-model", default="mlx-community/whisper-large-v3-turbo",
+                        help="ASR 模型（mlx-whisper 用 mlx-community/* 或 openai 模型名；faster-whisper 自动映射）")
+    parser.add_argument("--asr-backend", default="auto", choices=["auto", "mlx-whisper", "faster-whisper"],
+                        help="ASR 后端：auto 自动探测（默认）；mlx-whisper 仅 Apple Silicon；faster-whisper 通用（Windows/Linux）")
     parser.add_argument("--language", default="zh", help="语言（默认 zh）")
     parser.add_argument("--proxy", default=None, help="代理地址")
     parser.add_argument("--cleanup", default=None, choices=["all", "transcript-only"], help="清理模式")

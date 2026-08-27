@@ -10,7 +10,7 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
 ## 环境前置
 
 - **网络访问**：下载视频、获取字幕需网络访问权，沙箱内 DNS 不可用时需提权运行
-- **ASR 转录**：mlx-whisper 需 Apple Silicon Metal GPU，沙箱内不可用时优雅降级
+- **ASR 转录**：Apple Silicon 上用 `mlx-whisper`（Metal GPU）；Windows/Linux 自动降级到 `faster-whisper`（process.py 自动探测后端，沙箱内不可用时优雅降级）
 - **doctor 命令**：Metal 不可用时优雅降级报告，不再崩溃
 
 ---
@@ -49,7 +49,8 @@ description: "输入视频链接或本地视频文件路径，自动获取平台
    - 使用 `ffmpeg` 从视频提取音频到 `audio.wav`
 
 5. **ASR 转录**（无字幕时）：
-   - 默认使用 `mlx-whisper`（Apple Silicon 优化）
+   - 默认自动探测：Apple Silicon 用 `mlx-whisper`（Metal GPU 优化）；Windows/Linux 用 `faster-whisper`（CPU/GPU 均可）
+   - 可用 `--asr-backend` 手动指定，`--asr-model` 指定模型
    - 生成 `transcript.json`（带时间戳）+ `transcript.txt`（纯文本）
 
 6. **Agent 摘要**：
@@ -92,7 +93,8 @@ python3 .agents/skills/video-summary/scripts/process.py "/path/to/video.mp4" --o
 |------|--------|------|
 | `input` | （必填） | 视频 URL 或本地文件路径 |
 | `--output-dir` | `./runs` | 产物输出目录 |
-| `--asr-model` | `mlx-community/whisper-large-v3-turbo` | mlx-whisper 模型 |
+| `--asr-model` | `mlx-community/whisper-large-v3-turbo` | ASR 模型；faster-whisper 后端自动映射为 openai 模型名（如 `large-v3-turbo`） |
+| `--asr-backend` | `auto` | ASR 后端：`auto` 自动探测（默认）、`mlx-whisper`（Apple Silicon）、`faster-whisper`（通用） |
 | `--language` | `zh` | 字幕/ASR 语言 |
 | `--proxy` | 自动匹配或手动指定 | 代理地址 |
 | `--cleanup` | 不清理 | `all`=删音频；`transcript-only`=只保留 summary |
