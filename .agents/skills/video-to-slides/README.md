@@ -89,9 +89,9 @@ video-summary   │
 
 - **ffmpeg**：截图和音频提取
 - **python3** + VideoToDoc 项目 `.venv`
-- **mlx-whisper**：ASR 后端（若 transcript.json 需要重新生成）
+- **mlx-whisper / faster-whisper**：ASR 后端自动探测（若 transcript.json 需要重新生成）
 - **RapidOCR**：截图 OCR 去重
-- **mmdc**（mermaid-cli）：思维导图渲染
+- **mmdc（mermaid-cli ≥ 11.4.0）**：思维导图渲染。11.4.0 起才内置 `@mermaid-js/layout-tidy-tree` 鱼骨布局插件；旧版本渲染不报错但布局会静默回退为放射状。安装：`npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"`
 
 ## 产物
 

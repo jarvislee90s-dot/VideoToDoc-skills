@@ -1,4 +1,9 @@
 # VideoToDoc Skills - Python Dependencies
+#
+# 思维导图渲染还需 Node 侧 Mermaid CLI >= 11.4.0（npm 包，不进 pip 清单）：
+#   npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"
+# 注意：11.4.0 起才内置 @mermaid-js/layout-tidy-tree 鱼骨布局插件；
+# 旧版本出图正常但不报错，布局会静默回退为放射状。自检：mmdc --version
 
 # video-summary dependencies
 yt-dlp>=2024.1.0

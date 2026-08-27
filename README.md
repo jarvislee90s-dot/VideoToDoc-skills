@@ -95,8 +95,8 @@ python3 .agents/skills/video-summary/scripts/prepare_merge.py \
 # ASR：Apple Silicon 装 mlx-whisper；Windows/Linux 装 faster-whisper（任一即可，脚本自动探测）
 pip install mlx-whisper python-docx Pillow curl_cffi yt-dlp opencv-python numpy rapidocr
 
-# 思维导图渲染需要 mermaid-cli
-npm install -g @mermaid-js/mermaid-cli
+# 思维导图渲染需要 mermaid-cli（必须 >= 11.4.0 才内置 tidy-tree 鱼骨布局插件，旧版本会静默回退为放射状布局）
+npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"
 ```
 
 ## 使用

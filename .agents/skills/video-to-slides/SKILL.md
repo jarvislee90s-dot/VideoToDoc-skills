@@ -20,6 +20,7 @@ description: "在已有视频、音频、字幕的前提下，自动截图去重
 - **网络访问**：下载视频、获取字幕需网络访问权，沙箱内 DNS 不可用时需提权运行
 - **ASR 转录**：默认 `auto` 自动探测——Apple Silicon 用 mlx-whisper（Metal GPU），Windows/Linux 降级 faster-whisper；可用 `--transcript` 复用已有转录跳过 ASR
 - **ffmpeg**：截图、音频提取依赖 ffmpeg（`brew install ffmpeg`）
+- **Mermaid CLI ≥ 11.4.0**：思维导图渲染依赖 `mmdc`，且必须 ≥ 11.4.0（该版本起才内置 `@mermaid-js/layout-tidy-tree` 鱼骨布局插件）。旧版本渲染不报错，但 `config: layout: tidy-tree` 配置被忽略、导图静默回退为放射状布局。自检：`mmdc --version`；安装：`npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"`
 - **doctor 命令**：Metal 不可用时优雅降级报告，不再崩溃
 
 ---

@@ -110,8 +110,9 @@ def _find_mmdc() -> str:
     if bundled.exists():
         return str(bundled)
     raise VideoToDocError(
-        "找不到 mmdc。请先安装 Mermaid CLI：npm install -g @mermaid-js/mermaid-cli，"
-        "或在项目内安装：npm install --prefix .tools/mermaid-cli @mermaid-js/mermaid-cli"
+        "找不到 mmdc。请先安装 Mermaid CLI（需 >= 11.4.0，该版本起才内置 tidy-tree 鱼骨布局插件）："
+        'npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"，'
+        "或在项目内安装：npm install --prefix .tools/mermaid-cli \"@mermaid-js/mermaid-cli@>=11.4.0\""
     )
 
 

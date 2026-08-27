@@ -133,7 +133,10 @@ pip install -r requirements.txt
 # 3. 安装系统依赖（macOS）
 brew install ffmpeg
 
-# 4. 安装 lark-cli（发布到飞书需要）
+# 4. 安装 Mermaid CLI（思维导图渲染；必须 >= 11.4.0 才内置 tidy-tree 鱼骨布局插件）
+npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"
+
+# 5. 安装 lark-cli（发布到飞书需要）
 npm install -g @lark-cli/cli
 lark-cli config init
 lark-cli auth login --recommend
@@ -229,6 +232,7 @@ rapidocr
 - **Python 3.10+**
 - **ffmpeg** - 视频/音频处理
 - **Node.js** - lark-cli 运行环境
+- **Mermaid CLI ≥ 11.4.0** - 思维导图渲染（`npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"`）；11.4.0 起才内置 `@mermaid-js/layout-tidy-tree` 插件，旧版本渲染不报错但布局会静默回退为放射状。自检：`mmdc --version`
 - **lark-cli** - 飞书文档发布
 
 ## 环境要求
