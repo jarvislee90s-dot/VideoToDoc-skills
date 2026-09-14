@@ -129,6 +129,17 @@ def markdown_to_docx(markdown_path: Path, output_path: Path) -> Path | None:
     _configure_document_styles(document)
     base_dir = markdown_path.parent
     pending: list[str] = []
+    pending_table: list[str] = []
+
+    def _add_text_runs(paragraph, text: str) -> None:
+        """把 **加粗** 片段渲染为粗体 run，其余为普通文本。"""
+        for segment in re.split(r"(\*\*.+?\*\*)", text):
+            if not segment:
+                continue
+            if segment.startswith("**") and segment.endswith("**") and len(segment) > 4:
+                paragraph.add_run(segment[2:-2]).bold = True
+            else:
+                paragraph.add_run(segment)
 
     def flush_pending() -> None:
         if not pending:
@@ -136,13 +147,49 @@ def markdown_to_docx(markdown_path: Path, output_path: Path) -> Path | None:
         text = " ".join(item.strip() for item in pending if item.strip())
         pending.clear()
         if text:
-            document.add_paragraph(text, style="LectureBody")
+            para = document.add_paragraph(style="LectureBody")
+            _add_text_runs(para, text)
+
+    def flush_table() -> None:
+        """把连续的 | 行渲染为 Word 表格（首行为表头，跳过分隔行）。"""
+        if not pending_table:
+            return
+        rows = pending_table.copy()
+        pending_table.clear()
+
+        def split_cells(row: str) -> list[str]:
+            return [cell.strip() for cell in row.strip().strip("|").split("|")]
+
+        header = split_cells(rows[0])
+        body = [split_cells(r) for r in rows[1:] if not re.fullmatch(r"[\s|:\-]+", r)]
+        table = document.add_table(rows=1, cols=len(header))
+        table.style = "Table Grid"
+        for idx, cell_text in enumerate(header):
+            run = table.rows[0].cells[idx].paragraphs[0].add_run(re.sub(r"\*\*", "", cell_text))
+            run.bold = True
+            run.font.size = Pt(10)
+        for row in body:
+            cells = table.add_row().cells
+            for idx, cell_text in enumerate(row[: len(header)]):
+                para = cells[idx].paragraphs[0]
+                _add_text_runs(para, cell_text)
+                for run in para.runs:
+                    run.font.size = Pt(10)
+        document.add_paragraph()
 
     for raw_line in markdown_path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line:
             flush_pending()
+            flush_table()
             continue
+        # Markdown 表格行：累积到 flush_table 统一渲染
+        if line.startswith("|"):
+            flush_pending()
+            pending_table.append(line)
+            continue
+        if pending_table:
+            flush_table()
         if line == "---":
             flush_pending()
             _add_separator(document)
@@ -188,18 +235,17 @@ def markdown_to_docx(markdown_path: Path, output_path: Path) -> Path | None:
             # List items get their own paragraph with bullet styling
             para = document.add_paragraph(style="List Bullet")
             # Remove the "- " prefix and handle bold text
-            text = line[2:].strip()
-            # Handle **bold** text
-            runs = re.split(r'(\*\*[^*]+\*\*)', text)
-            for run in runs:
-                if run.startswith('**') and run.endswith('**'):
-                    run_obj = para.add_run(run[2:-2])
-                    run_obj.bold = True
-                elif run:
-                    para.add_run(run)
+            _add_text_runs(para, line[2:].strip())
+            continue
+        ordered_match = re.match(r"^(\d+)\.\s+(.*)$", line)
+        if ordered_match:
+            flush_pending()
+            para = document.add_paragraph(style="List Number")
+            _add_text_runs(para, ordered_match.group(2).strip())
             continue
         pending.append(line)
     flush_pending()
+    flush_table()
     output_path.parent.mkdir(parents=True, exist_ok=True)
     document.save(str(output_path))
     return output_path

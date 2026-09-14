@@ -1,6 +1,8 @@
 import tempfile
 from pathlib import Path
 
+import pytest
+
 from videotodoc.document import ensure_mindmap_link
 
 
@@ -84,3 +86,62 @@ def test_process_result_mindmap_path_optional(tmp_path: Path):
         mindmap_path=None,
     )
     assert result.mindmap_path is None
+
+
+def test_markdown_to_docx_renders_markdown_table(tmp_path: Path):
+    """Markdown 表格应渲染为真正的 Word 表格，而非残留 | 管道符原文。"""
+    pytest.importorskip("docx", reason="python-docx 未安装，跳过 Word 渲染测试")
+    from docx import Document
+    from videotodoc.document import markdown_to_docx
+
+    md = tmp_path / "t.md"
+    md.write_text(
+        "# 标题\n\n"
+        "| 情景 | 定义 |\n"
+        "|---|---|\n"
+        "| **STEPS** | 已宣布政策情景 |\n"
+        "| CPS | 当前政策情景 |\n",
+        encoding="utf-8",
+    )
+    out = markdown_to_docx(md, tmp_path / "t.docx")
+    doc = Document(str(out))
+
+    assert len(doc.tables) == 1
+    table = doc.tables[0]
+    assert len(table.rows) == 3
+    assert table.rows[0].cells[0].text == "情景"
+    assert table.rows[1].cells[0].text == "STEPS"
+    # 表格内容不得以 | 原文形式残留在正文段落里
+    body = "\n".join(p.text for p in doc.paragraphs)
+    assert "| 情景 |" not in body
+    assert "---|" not in body
+
+
+def test_markdown_to_docx_bold_runs_and_ordered_list(tmp_path: Path):
+    """正文 **加粗** 应转为粗体 run（不留星号），有序列表应分行。"""
+    pytest.importorskip("docx", reason="python-docx 未安装，跳过 Word 渲染测试")
+    from docx import Document
+    from videotodoc.document import markdown_to_docx
+
+    md = tmp_path / "t.md"
+    md.write_text(
+        "# 标题\n\n"
+        "增长 **20%** 至近 **1.2 万亿美元**。\n\n"
+        "1. 第一类原型\n"
+        "2. 第二类原型\n",
+        encoding="utf-8",
+    )
+    out = markdown_to_docx(md, tmp_path / "t.docx")
+    doc = Document(str(out))
+
+    bold_texts = {
+        run.text
+        for para in doc.paragraphs
+        for run in para.runs
+        if run.bold
+    }
+    assert {"20%", "1.2 万亿美元"} <= bold_texts
+    all_text = "\n".join(p.text for p in doc.paragraphs)
+    assert "**" not in all_text
+    for item in ("第一类原型", "第二类原型"):
+        assert any(item in p.text for p in doc.paragraphs)
