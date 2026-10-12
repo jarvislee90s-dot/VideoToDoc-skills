@@ -12,7 +12,13 @@ import json
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "_shared"))
+for _shared_cand in (
+    Path(__file__).resolve().parents[2] / "_shared",
+    Path(__file__).resolve().parents[3] / "_shared",
+):
+    if _shared_cand.is_dir():
+        sys.path.insert(0, str(_shared_cand))
+        break
 from transcript_merge import suggest_segments, normalize_raw  # noqa: E402
 
 # signal_stats 同包（懒导入，失败静默；_print_signal_hint 提示用）

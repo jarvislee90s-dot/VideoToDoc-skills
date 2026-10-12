@@ -5,7 +5,10 @@ from pathlib import Path
 # conftest.py 位于 .../scripts/videotodoc/tests/conftest.py
 # parents[2] = scripts/（含 videotodoc 包），parents[4] = skills/（含 _shared）
 SCRIPTS_DIR = Path(__file__).resolve().parents[2]
-SHARED_DIR = SCRIPTS_DIR.parents[1] / "_shared"
+SHARED_DIR = next(
+    (d for d in (SCRIPTS_DIR.parents[0] / "_shared", SCRIPTS_DIR.parents[1] / "_shared") if d.is_dir()),
+    SCRIPTS_DIR.parents[1] / "_shared",
+)
 for p in (SCRIPTS_DIR, SHARED_DIR):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))
