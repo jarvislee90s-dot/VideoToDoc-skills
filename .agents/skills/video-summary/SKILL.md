@@ -174,6 +174,41 @@ B站视频需要 `buvid3/buvid4` 指纹 cookies 才能下载。脚本会自动�
 python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --cookies-from-browser chrome
 ```
 
+## 抖音支持
+
+抖音 web API 全部要求 `a_bogus`/`msToken` 实时签名，yt-dlp 的静态签名实现已被风控 403（2026-08 实测）。因此抖音走**专用源适配器** `scripts/sources/douyin.py`，不复用 yt-dlp：
+
+1. Playwright 打开视频页（持久化 profile），页面自身 JS 带完整签名调用 detail API
+2. 拦截 `/aweme/v1/web/aweme/detail/` 响应，取 `play_addr` 直链（**音视频合流 MP4**，含完整元数据）
+3. 纯 HTTP 下载直链（需 Chrome UA + `Referer: https://www.douyin.com/`，实测缺一返回 403）
+4. 接入既有流水线：ffmpeg 提取音频 → ASR → 摘要（抖音无平台字幕路径，直接 ASR）
+
+### 登录态与浏览器策略
+
+- 登录态存独立 profile：`%LOCALAPPDATA%\VideoSkills\douyin-profile`（环境变量 `VIDEO_SUMMARY_DOUYIN_PROFILE` 可覆盖）
+- **无头优先**：默认无头运行；无登录态或触发风控时自动弹**有头窗口**（首次需用抖音APP扫码登录一次，之后 cookie 复用；若出现滑块验证手动完成即可）
+- 单独登录命令：`python3 .agents/skills/video-summary/scripts/sources/douyin.py "<任意抖音URL>" --login`
+- 强制有头：`process.py --douyin-headful`
+
+### 支持范围
+
+- ✅ `www.douyin.com/video/<id>`、`v.douyin.com/<code>` 短链（302 自动解析）
+- ❌ 图集 `/note/`、合集、直播：遇到时明确报错
+
+### 环境前置（仅抖音需要）
+
+```bash
+pip install playwright
+python -m playwright install chromium
+```
+
+### 单测适配器（不跑 ASR）
+
+```bash
+python3 .agents/skills/video-summary/scripts/sources/douyin.py "<抖音URL>" --output ./test.mp4
+# 成功后输出 JSON：video_path / title / author / duration_ms
+```
+
 ## 异常处理
 
 - **脚本中途失败**：已有产物会被缓存跳过，重新运行从断点继续

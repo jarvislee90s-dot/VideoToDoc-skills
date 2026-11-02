@@ -28,6 +28,10 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
+# 源适配器：每个平台一个独立模块（scripts/sources/），风控变化时只改对应模块
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from sources import douyin as douyin_source  # noqa: E402
+
 # Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
 if sys.platform == "win32":
     for _s in (sys.stdout, sys.stderr):
@@ -929,6 +933,39 @@ def _print_merge_hint(transcript_json_path: Path) -> None:
     )
 
 
+def _finish_run(run_dir: Path, title: str, ts: str,
+                transcript_json_path: Path, transcript_txt_path: Path,
+                args: argparse.Namespace, source_label: str) -> None:
+    """共用收尾：占位摘要 + 清理 + 输出结果 JSON。"""
+    # 生成最终摘要文件：视频标题_总结_时间戳.md
+    summary_path = run_dir / _build_summary_filename(title, ts)
+    if not summary_path.exists():
+        # 脚本只创建占位文件，摘要正文由 Agent 按 SKILL.md 步骤 6 补写
+        summary_path.write_text(
+            f"# {title}\n\n"
+            f"> 本文件由脚本自动创建的占位文件，摘要正文需按 SKILL.md 步骤 6 由 Agent 读取 transcript.txt 后补写。\n",
+            encoding="utf-8",
+        )
+        print(f"  📝 创建占位摘要：{summary_path.name}（待 Agent 补写）")
+
+    # 清理
+    if args.cleanup:
+        cleanup(run_dir, args.cleanup)
+
+    # 输出结果
+    result = {
+        "run_dir": str(run_dir.resolve()),
+        "title": title,
+        "source": source_label,
+        "transcript_json": str(transcript_json_path.resolve()) if transcript_json_path.exists() else None,
+        "transcript_txt": str(transcript_txt_path.resolve()) if transcript_txt_path.exists() else None,
+        "summary_md": str(summary_path.resolve()) if summary_path.exists() else None,
+    }
+    source_desc = {"subtitle": "字幕", "asr": "ASR", "douyin": "ASR"}.get(source_label, source_label)
+    print(f"\n✅ 完成！（来源：{source_desc}）")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+
+
 def cmd_process(args: argparse.Namespace) -> None:
     """主流程：URL/本地路径 → 字幕优先 → ASR fallback → 输出"""
     user_input = args.input
@@ -942,6 +979,29 @@ def cmd_process(args: argparse.Namespace) -> None:
 
     base_dir = Path(args.output_dir)
     base_dir.mkdir(parents=True, exist_ok=True)
+
+    # 抖音：web API 需实时签名（yt-dlp 已被风控 403），走专用源适配器，无字幕路径直接 ASR
+    if is_url and douyin_source.matches(user_input):
+        print(f"🔗 {user_input}")
+        try:
+            meta = douyin_source.probe(user_input, headless=not getattr(args, "douyin_headful", False))
+        except ImportError as e:
+            print("❌ 缺少 playwright 依赖：pip install playwright && python -m playwright install chromium",
+                  file=sys.stderr)
+            raise SystemExit(2) from e
+        title = meta.title
+        print(f"📝 视频标题：{title}")
+        run_dir = base_dir / _build_run_dir_name(title, user_input)
+        run_dir.mkdir(parents=True, exist_ok=True)
+        ts = _timestamp()
+        transcript_json_path = run_dir / "transcript.json"
+        transcript_txt_path = run_dir / "transcript.txt"
+        video_path = douyin_source.download(meta, run_dir).video_path
+        audio_path = extract_audio(video_path, run_dir)
+        transcribe_audio(audio_path, run_dir, args.asr_model, args.language, args.asr_backend)
+        _print_merge_hint(transcript_json_path)
+        return _finish_run(run_dir, title, ts, transcript_json_path, transcript_txt_path,
+                           args, source_label="douyin")
 
     # 先获取标题（URL输入时）
     title = None
@@ -1009,32 +1069,9 @@ def cmd_process(args: argparse.Namespace) -> None:
         transcribe_audio(audio_path, run_dir, args.asr_model, args.language, args.asr_backend)
         _print_merge_hint(transcript_json_path)
 
-    # 生成最终摘要文件：视频标题_总结_时间戳.md
-    summary_path = run_dir / _build_summary_filename(title, ts)
-    if not summary_path.exists():
-        # 脚本只创建占位文件，摘要正文由 Agent 按 SKILL.md 步骤 6 补写
-        summary_path.write_text(
-            f"# {title}\n\n"
-            f"> 本文件由脚本自动创建的占位文件，摘要正文需按 SKILL.md 步骤 6 由 Agent 读取 transcript.txt 后补写。\n",
-            encoding="utf-8",
-        )
-        print(f"  📝 创建占位摘要：{summary_path.name}（待 Agent 补写）")
-
-    # 清理
-    if args.cleanup:
-        cleanup(run_dir, args.cleanup)
-
-    # 输出结果
-    result = {
-        "run_dir": str(run_dir.resolve()),
-        "title": title,
-        "source": "subtitle" if is_url and has_subtitle else "asr",
-        "transcript_json": str(transcript_json_path.resolve()) if transcript_json_path.exists() else None,
-        "transcript_txt": str(transcript_txt_path.resolve()) if transcript_txt_path.exists() else None,
-        "summary_md": str(summary_path.resolve()) if summary_path.exists() else None,
-    }
-    print(f"\n✅ 完成！（来源：{'字幕' if result['source'] == 'subtitle' else 'ASR'}）")
-    print(json.dumps(result, ensure_ascii=False, indent=2))
+    # 生成占位摘要 / 清理 / 输出结果
+    _finish_run(run_dir, title, ts, transcript_json_path, transcript_txt_path,
+                args, source_label="subtitle" if is_url and has_subtitle else "asr")
 
 
 def _build_arg_parser():
@@ -1054,6 +1091,8 @@ def _build_arg_parser():
     parser.add_argument("--cookies-from-browser", default="chrome",
                         choices=["chrome", "firefox", "safari", "edge"],
                         help="浏览器 cookies 来源（默认 chrome，B 站风控需登录态）")
+    parser.add_argument("--douyin-headful", action="store_true",
+                        help="抖音下载强制有头浏览器（默认无头优先，失败自动转有头）")
     return parser
 
 
