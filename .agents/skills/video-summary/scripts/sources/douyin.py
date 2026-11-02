@@ -28,10 +28,10 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 try:
-    from .base import SourceVideo, normalize_url, source_cli_main
+    from .base import SourceVideo, normalize_url, slugify, source_cli_main
 except ImportError:  # 独立 CLI 直跑时（python sources/douyin.py）无包上下文
     sys.path.insert(0, str(Path(__file__).resolve().parent))
-    from base import SourceVideo, normalize_url, source_cli_main  # noqa: E402
+    from base import SourceVideo, normalize_url, slugify, source_cli_main  # noqa: E402
 
 DOUYIN_DOMAINS = ("douyin.com", "iesdouyin.com")
 UNSUPPORTED_PATTERNS = (
@@ -107,7 +107,11 @@ def _capture_detail(page, video_url: str, wait_seconds: int) -> dict | None:
 
     page.on("response", on_response)
     try:
-        page.goto(video_url, wait_until="domcontentloaded", timeout=60_000)
+        try:
+            page.goto(video_url, wait_until="domcontentloaded", timeout=60_000)
+        except Exception as e:
+            print(f"  ⚠️  页面加载失败（{e.__class__.__name__}），按捕获失败处理")
+            return None
         deadline = time.time() + wait_seconds
         while captured is None and time.time() < deadline:
             page.wait_for_timeout(500)
@@ -123,9 +127,10 @@ def _extract_from_detail(detail: dict, video_id: str) -> dict:
     play_addr = (video.get("play_addr") or {}).get("url_list") or []
     if not play_addr:
         raise RuntimeError("detail 响应中没有 play_addr 直链（可能视频被删除或需特定权限）")
-    desc = (d.get("desc") or video_id).strip().splitlines()[0]
+    desc_lines = (d.get("desc") or "").strip().splitlines()
+    title = desc_lines[0].strip() if desc_lines else ""
     return {
-        "title": desc or video_id,
+        "title": title or video_id,
         "author": (d.get("author") or {}).get("nickname"),
         "duration_ms": d.get("duration"),
         "play_url": play_addr[0],
@@ -134,15 +139,20 @@ def _extract_from_detail(detail: dict, video_id: str) -> dict:
 
 
 def _download_play_url(play_url: str, out_path: Path) -> None:
-    """直链为带签名的 CDN 地址。实测需要 Chrome UA + 抖音 Referer，缺一返回 403。"""
+    """直链为带签名的 CDN 地址。实测需要 Chrome UA + 抖音 Referer，缺一返回 403。
+
+    先写 .part 临时文件，校验尺寸完整后 rename——失败/断流不留半截文件，
+    避免下游把残缺 MP4 当有效缓存复用。
+    """
     import urllib.request
 
     headers = {"User-Agent": USER_AGENT, "Referer": "https://www.douyin.com/"}
     req = urllib.request.Request(play_url, headers=headers)
+    part_path = out_path.with_suffix(out_path.suffix + ".part")
     last_err: Exception | None = None
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(req, timeout=60) as resp, open(out_path, "wb") as f:
+            with urllib.request.urlopen(req, timeout=60) as resp, open(part_path, "wb") as f:
                 total = int(resp.headers.get("Content-Length") or 0)
                 done = 0
                 while True:
@@ -155,9 +165,15 @@ def _download_play_url(play_url: str, out_path: Path) -> None:
                         sys.stdout.write(f"\r  ⬇️  {done / 1048576:.1f} / {total / 1048576:.1f} MB")
                         sys.stdout.flush()
             print()
+            if total and done != total:
+                raise IOError(f"下载不完整：{done} / {total} 字节（服务端提前断流）")
+            if done == 0:
+                raise IOError("下载到 0 字节")
+            part_path.replace(out_path)
             return
         except Exception as e:
             last_err = e
+            part_path.unlink(missing_ok=True)
             time.sleep(2 * (attempt + 1))
     raise RuntimeError(f"视频直链下载失败：{last_err}")
 
@@ -217,8 +233,13 @@ def probe(url: str, *, headless: bool = True, login_max_wait: int = 180,
         for hl in attempts:
             label = "无头" if hl else "有头"
             print(f"  🌐 启动浏览器（{label}模式）...")
-            context = p.chromium.launch_persistent_context(
-                str(profile), **_launch_kwargs(hl))
+            try:
+                context = p.chromium.launch_persistent_context(
+                    str(profile), **_launch_kwargs(hl))
+            except Exception as e:
+                raise RuntimeError(
+                    f"浏览器启动失败（{e.__class__.__name__}）。若提示 profile 被占用，"
+                    "请确认没有其他 douyin.py/process.py 抖音任务在运行（同一 profile 不支持并行）") from e
             try:
                 if not _has_session_cookie(context):
                     if hl:
@@ -269,7 +290,7 @@ def download(meta: SourceVideo, run_dir: Path) -> SourceVideo:
         raise ValueError("meta 中没有 play_url，请先调用 probe()")
 
     video_id = meta.metadata.get("aweme_id", "video")
-    safe_title = re.sub(r'[\\/:*?"<>|\r\n]+', "_", meta.title)[:80].strip("_ ") or video_id
+    safe_title = slugify(meta.title) or video_id
     out_path = run_dir / f"{safe_title}.mp4"
     if not out_path.exists():
         print("  ⬇️  下载视频（合流直链）...")
@@ -328,7 +349,7 @@ def main() -> None:
     result = fetch(url, target.parent, headless=not args.headful,
                    capture_wait=args.timeout, profile_dir=profile)
     if result.video_path.resolve() != target:
-        result.video_path.rename(target)
+        os.replace(result.video_path, target)  # Windows 下 rename 目标存在会抛错，用 replace 覆盖
         result.video_path = target
     source_cli_main(result)
 

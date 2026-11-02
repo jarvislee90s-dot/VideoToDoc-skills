@@ -28,9 +28,17 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
-# 源适配器：每个平台一个独立模块（scripts/sources/），风控变化时只改对应模块
+# 源适配器：每个平台一个独立模块（scripts/sources/），风控变化时只改对应模块。
+# 延迟加载：sources/ 缺失（单技能分包分发）时不影响其他平台与本地路径。
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from sources import douyin as douyin_source  # noqa: E402
+
+
+def _load_douyin_source():
+    try:
+        from sources import douyin
+        return douyin
+    except ImportError:
+        return None
 
 # Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
 if sys.platform == "win32":
@@ -969,7 +977,16 @@ def _finish_run(run_dir: Path, title: str, ts: str,
 def cmd_process(args: argparse.Namespace) -> None:
     """主流程：URL/本地路径 → 字幕优先 → ASR fallback → 输出"""
     user_input = args.input
+    douyin_source = _load_douyin_source()
+    if douyin_source is not None:
+        # 支持包裹文本（如"看这个 https://v.douyin.com/xxx"）：提取规整 URL；本地路径原样返回
+        user_input = douyin_source.normalize_url(user_input)
     is_url = _is_url(user_input)
+
+    if douyin_source is None and "douyin.com" in user_input:
+        print("❌ 缺少抖音适配器或 playwright：pip install playwright && python -m playwright install chromium",
+              file=sys.stderr)
+        raise SystemExit(2)
 
     check_dependencies(
         fatal=True,
@@ -981,13 +998,12 @@ def cmd_process(args: argparse.Namespace) -> None:
     base_dir.mkdir(parents=True, exist_ok=True)
 
     # 抖音：web API 需实时签名（yt-dlp 已被风控 403），走专用源适配器，无字幕路径直接 ASR
-    if is_url and douyin_source.matches(user_input):
+    if is_url and douyin_source is not None and douyin_source.matches(user_input):
         print(f"🔗 {user_input}")
         try:
             meta = douyin_source.probe(user_input, headless=not getattr(args, "douyin_headful", False))
-        except ImportError as e:
-            print("❌ 缺少 playwright 依赖：pip install playwright && python -m playwright install chromium",
-                  file=sys.stderr)
+        except (ValueError, RuntimeError) as e:
+            print(f"❌ 抖音解析失败：{e}", file=sys.stderr)
             raise SystemExit(2) from e
         title = meta.title
         print(f"📝 视频标题：{title}")
@@ -996,7 +1012,11 @@ def cmd_process(args: argparse.Namespace) -> None:
         ts = _timestamp()
         transcript_json_path = run_dir / "transcript.json"
         transcript_txt_path = run_dir / "transcript.txt"
-        video_path = douyin_source.download(meta, run_dir).video_path
+        try:
+            video_path = douyin_source.download(meta, run_dir).video_path
+        except (ValueError, RuntimeError) as e:
+            print(f"❌ 抖音下载失败：{e}", file=sys.stderr)
+            raise SystemExit(2) from e
         audio_path = extract_audio(video_path, run_dir)
         transcribe_audio(audio_path, run_dir, args.asr_model, args.language, args.asr_backend)
         _print_merge_hint(transcript_json_path)

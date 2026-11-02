@@ -3,9 +3,12 @@
 每个视频源一个独立模块，process.py 只做统一接入。平台风控策略变化时，
 只改对应源模块，不影响其他平台。
 
-适配器需实现：
+适配器契约（以 sources/douyin.py 为参考实现）：
 - matches(url) -> bool：是否属于本源
-- resolve(url) -> SourceVideo：解析并下载视频到 run_dir
+- probe(url, **opts) -> SourceVideo：解析页面拿元数据与直链（不落盘）；
+  video_path 为空 Path()，直链暂存于 metadata["play_url"]
+- download(meta, run_dir) -> SourceVideo：下载到 run_dir 并返回完整 SourceVideo
+- fetch(url, run_dir, **opts) -> SourceVideo：probe + download 便捷封装（独立 CLI 用）
 
 每个源模块同时提供独立 CLI，便于单独调试：
     python sources/douyin.py <url> --output <mp4路径>
@@ -18,6 +21,13 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
+
+
+def slugify(text: str) -> str:
+    """文件系统安全化：Windows 非法字符与控制字符替换为 _（与 process._slugify 同语义）。"""
+    text = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', text)
+    text = re.sub(r'_+', '_', text).strip('_')
+    return text[:80] or "video"
 
 
 @dataclass

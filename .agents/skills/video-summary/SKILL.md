@@ -189,6 +189,7 @@ python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --cookies-fr
 - **无头优先**：默认无头运行；无登录态或触发风控时自动弹**有头窗口**（首次需用抖音APP扫码登录一次，之后 cookie 复用；若出现滑块验证手动完成即可）
 - 单独登录命令：`python3 .agents/skills/video-summary/scripts/sources/douyin.py "<任意抖音URL>" --login`
 - 强制有头：`process.py --douyin-headful`
+- ⚠️ 同一 profile 不支持并行：不要同时运行多个抖音下载任务（浏览器 profile 锁冲突）
 
 ### 支持范围
 
