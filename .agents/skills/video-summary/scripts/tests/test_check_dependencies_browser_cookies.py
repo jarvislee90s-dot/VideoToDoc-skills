@@ -1,3 +1,5 @@
+# ⚠️ 本文件已迁移至仓库 tests/test_bilibili_compat.py（注册表架构后 patch 目标已变），保留仅作历史参考，勿在此新增用例。
+
 """Bug 2：browser_cookie3 加入 check_dependencies 预检，缺失不再静默。"""
 import builtins
 import sys

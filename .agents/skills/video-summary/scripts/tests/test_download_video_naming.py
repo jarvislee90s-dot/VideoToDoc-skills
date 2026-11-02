@@ -1,3 +1,5 @@
+# ⚠️ 本文件已迁移至仓库 tests/test_bilibili_compat.py（注册表架构后 patch 目标已变），保留仅作历史参考，勿在此新增用例。
+
 """Bug 1：yt-dlp 回退分支产物名必须用 safe_title，不能写死 video.mp4。"""
 import sys
 import types

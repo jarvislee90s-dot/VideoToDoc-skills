@@ -169,10 +169,26 @@ B站视频需要 `buvid3/buvid4` 指纹 cookies 才能下载。脚本会自动�
 2. `--cookies-from-browser chrome`（用户指定，从浏览器读取登录态 cookies）
 3. v_voucher 检测 → 提示登录
 
+> ⚠️ 2026-11 实测：B站已收紧风控，匿名 buvid 策略对**所有视频**触发 v_voucher，下载必须登录态。
+> Windows 下读取登录态 cookie 的可用路线：浏览器关闭后 `--cookies-from-browser chrome`（Chrome 运行中会锁库报 admin 错误；Edge 新版 App-Bound 加密无法解密）。
+
 ```bash
 # 412 时用浏览器 cookies 重试
 python3 .agents/skills/video-summary/scripts/process.py "<B站URL>" --cookies-from-browser chrome
 ```
+
+## 源适配器架构
+
+平台下载逻辑按源拆分在 `scripts/sources/`，风控策略变化只改对应模块，process.py 统一派发：
+
+| 模块 | 形态 | 说明 |
+|------|------|------|
+| `douyin.py` | 独立下载器（probe/download，无字幕路径） | Playwright 拦截 detail API，见下文"抖音支持" |
+| `bilibili.py` | yt-dlp 系（fetch_info/fetch_subtitles/download） | curl_cffi buvid → 浏览器 cookies → yt-dlp 三级策略 |
+| `youtube.py` | yt-dlp 系（薄封装） | 标准流水线，需代理 |
+| `yt_dlp_source.py` | 通用兜底 | 未识别平台（小红书等）走这里 |
+
+base.py 定义两形态契约；bilibili/youtube 内部复用 yt_dlp_source 的信息与字幕实现。
 
 ## 抖音支持
 

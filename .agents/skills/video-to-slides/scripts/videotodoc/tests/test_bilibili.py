@@ -37,14 +37,15 @@ class TestCookiesFromBrowser:
             sys.argv = old_argv
 
     def test_argparse_default_chrome(self):
-        """默认不传 cookies-from-browser 时为 chrome（B 站风控需登录态）。"""
+        """默认不注入 cookies-from-browser（None）——显式传参才注入，避免
+        无谓读取浏览器 cookie 库（Chrome 运行中会锁库导致下载崩溃）。"""
         import sys
         old_argv = sys.argv
         sys.argv = ["process.py", "https://www.bilibili.com/video/BV123"]
         try:
             parser = vs_process._build_arg_parser()
             args = parser.parse_args()
-            assert args.cookies_from_browser == "chrome"
+            assert args.cookies_from_browser is None
         finally:
             sys.argv = old_argv
 

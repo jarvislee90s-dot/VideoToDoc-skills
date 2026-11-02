@@ -1,3 +1,5 @@
+# ⚠️ 本文件已迁移至仓库 tests/test_bilibili_compat.py（注册表架构后 patch 目标已变），保留仅作历史参考，勿在此新增用例。
+
 from unittest.mock import MagicMock, patch
 
 

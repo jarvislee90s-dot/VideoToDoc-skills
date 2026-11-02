@@ -34,6 +34,11 @@ except ImportError:  # 独立 CLI 直跑时（python sources/douyin.py）无包�
     from base import SourceVideo, normalize_url, slugify, source_cli_main  # noqa: E402
 
 DOUYIN_DOMAINS = ("douyin.com", "iesdouyin.com")
+
+# 独立下载器形态（契约见 base.py）：无平台字幕，跳过字幕阶段。
+# process._get_douyin_adapter / download_video 依赖此标记识别"非 yt-dlp 系"适配器。
+has_subtitles = False
+
 UNSUPPORTED_PATTERNS = (
     ("/note/", "图集（note）暂不支持，请提供视频链接 douyin.com/video/<id>"),
     ("/slides/", "合集（slides）暂不支持，请提供单视频链接"),

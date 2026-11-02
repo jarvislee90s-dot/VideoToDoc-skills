@@ -23,8 +23,6 @@ import re
 import subprocess
 import sys
 import time
-import urllib.request
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 
@@ -33,12 +31,41 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
-def _load_douyin_source():
-    try:
-        from sources import douyin
-        return douyin
-    except ImportError:
-        return None
+_ADAPTERS = None
+
+
+def _load_adapters() -> list:
+    """加载源适配器（douyin/bilibili/youtube）。sources/ 缺失或单个模块损坏时
+    静默跳过，对应平台回退通用 yt-dlp 路径（不阻塞其他平台）。"""
+    global _ADAPTERS
+    if _ADAPTERS is None:
+        import importlib
+        adapters = []
+        for name in ("douyin", "bilibili", "youtube"):
+            try:
+                adapters.append(importlib.import_module(f"sources.{name}"))
+            except Exception:
+                pass  # 模块缺失或损坏都跳过该平台，回退通用 yt-dlp 路径
+        _ADAPTERS = adapters
+    return _ADAPTERS
+
+
+def _find_adapter(url: str):
+    for a in _load_adapters():
+        try:
+            if a.matches(url):
+                return a
+        except Exception:
+            continue
+    return None
+
+
+def _get_douyin_adapter():
+    """独立下载器形态（probe/download、无字幕路径）的适配器，当前即抖音。"""
+    for a in _load_adapters():
+        if hasattr(a, "probe") and not getattr(a, "has_subtitles", True):
+            return a
+    return None
 
 # Windows 控制台默认 GBK，脚本含 emoji 输出，强制 UTF-8 避免 UnicodeEncodeError
 if sys.platform == "win32":
@@ -112,10 +139,6 @@ def run_cmd(cmd: list[str], check: bool = True, timeout: int = 30) -> subprocess
 
 def _is_url(text: str) -> bool:
     return text.startswith("http://") or text.startswith("https://")
-
-
-def _is_bilibili_url(url: str) -> bool:
-    return "bilibili.com" in url or "b23.tv" in url
 
 
 def _timestamp() -> str:
@@ -212,561 +235,57 @@ def cmd_doctor() -> None:
             print(f"     安装：{cmd}")
 
 
-# ── 字幕获取 ────────────────────────────────────────────────
+# ── 源适配器派发（兼容入口，旧公开 API 签名不变） ──────────
 
 
 def fetch_video_info(url: str, proxy: str | None = None) -> dict:
-    """获取视频信息（标题、字幕列表等）"""
-    import yt_dlp
-
-    # B站：优先用 curl_cffi 绕过 412
-    if _is_bilibili_url(url):
-        try:
-            from curl_cffi import requests as _  # noqa: F401
-            bvid, cid, title = _bilibili_extract_ids(url)
-            if title:
-                # 检查字幕（通过 player/v2 API）
-                subtitles: dict = {}
-                auto_captions: dict = {}
-                if bvid and cid:
-                    try:
-                        from curl_cffi import requests as cffi_requests
-                        resp = cffi_requests.get(
-                            "https://api.bilibili.com/x/player/v2",
-                            params={"bvid": bvid, "cid": cid},
-                            impersonate="chrome", timeout=15,
-                        )
-                        sub_data = resp.json().get("data", {}).get("subtitle", {})
-                        for s in sub_data.get("subtitles", []):
-                            lang = s.get("lan", "unknown")
-                            subtitles.setdefault(lang, []).append({
-                                "ext": "json",
-                                "url": s.get("subtitle_url", ""),
-                                "language_code": lang,
-                                "name": s.get("lan_doc", lang),
-                            })
-                    except Exception:
-                        pass
-                print(f"  📺 标题：{title}")
-                print(f"  🔤 人工字幕：{list(subtitles.keys()) or '无'}")
-                print(f"  🤖 自动字幕：{list(auto_captions.keys()) or '无'}")
-                return {"title": title, "subtitles": subtitles, "automatic_captions": auto_captions}
-        except Exception:
-            pass  # fallback to yt-dlp
-
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "writesubtitles": True,
-        "writeautomaticsub": True,
-        "subtitleslangs": ["zh-Hans", "zh", "zh-CN", "en"],
-    }
-    if proxy:
-        ydl_opts["proxy"] = proxy
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(url, download=False)
-
-    title = info.get("title", "video")
-    subtitles = info.get("subtitles", {})
-    auto_captions = info.get("automatic_captions", {})
-
-    print(f"  📺 标题：{title}")
-    print(f"  🔤 人工字幕：{list(subtitles.keys()) or '无'}")
-    print(f"  🤖 自动字幕：{list(auto_captions.keys()) or '无'}")
-
-    return {
-        "title": title,
-        "subtitles": subtitles,
-        "automatic_captions": auto_captions,
-    }
-
-
-def _download_subtitle(url: str, subtitle_list: list, run_dir: Path, title: str, sub_type: str) -> tuple[bool, str | None, str | None]:
-    """下载并解析字幕文件"""
-    import yt_dlp
-
-    format_priority = {"srv1": 1, "srt": 2, "vtt": 3}
-    sorted_subs = sorted(subtitle_list, key=lambda s: format_priority.get(s.get("ext", ""), 99))
-    sub_info = sorted_subs[0]
-
-    print(f"  📥 下载 {sub_type}：{sub_info.get('name', '未知语言')} ({sub_info.get('ext', '未知格式')})")
-
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "writesubtitles": True,
-        "subtitlesformat": "srv1/srt/vtt",
-        "subtitleslangs": [sub_info.get("language_code", "zh")],
-        "outtmpl": str(run_dir / "subtitle"),
-    }
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-    subtitle_path = None
-    for f in run_dir.glob("subtitle*"):
-        if f.suffix in [".srv1", ".srt", ".vtt"]:
-            subtitle_path = f
-            break
-
-    if not subtitle_path or not subtitle_path.exists():
-        return False, None, title
-
-    text, segments = _parse_subtitle_file(subtitle_path)
-    subtitle_path.unlink(missing_ok=True)
-
-    if text:
-        seg_cache = run_dir / "_subtitle_segments.json"
-        seg_cache.write_text(json.dumps(segments, ensure_ascii=False, indent=2), encoding="utf-8")
-        return True, text, title
-
-    return False, None, title
-
-
-def _parse_subtitle_file(path: Path) -> tuple[str | None, list[dict]]:
-    """解析字幕文件为纯文本 + 带 start_ms/end_ms 的 segment 列表。
-
-    支持 SRT、VTT（含 --> 时间戳行）和 XML 格式。
-    """
-    import re
-
-    text = path.read_text(encoding="utf-8")
-    lines_list: list[str] = []
-    segments: list[dict] = []
-
-    # SRT / VTT 格式：包含 --> 时间戳行
-    if "-->" in text:
-        # 按空行分块
-        blocks = re.split(r"\n\s*\n", text.strip())
-        for block in blocks:
-            block_lines = block.strip().split("\n")
-            # 找时间戳行
-            tc_line = None
-            text_lines: list[str] = []
-            for line in block_lines:
-                if "-->" in line:
-                    tc_line = line
-                elif line.strip() and not line.strip().isdigit():
-                    # 跳过 WEBVTT 头
-                    if not line.strip().startswith("WEBVTT"):
-                        text_lines.append(line.strip())
-            if tc_line and text_lines:
-                m = re.match(
-                    r"(\d+):(\d+):(\d+)[,.](\d+)\s*-->\s*(\d+):(\d+):(\d+)[,.](\d+)",
-                    tc_line,
-                )
-                if m:
-                    g = m.groups()
-                    start_ms = int(int(g[0]) * 3600000 + int(g[1]) * 60000 + int(g[2]) * 1000 + int(g[3]))
-                    end_ms = int(int(g[4]) * 3600000 + int(g[5]) * 60000 + int(g[6]) * 1000 + int(g[7]))
-                    seg_text = " ".join(text_lines)
-                    lines_list.append(seg_text)
-                    segments.append({"start_ms": start_ms, "end_ms": end_ms, "text": seg_text})
-        if lines_list:
-            return "\n".join(lines_list), segments
-
-    # XML 格式
-    if "<text" in text or "<p" in text:
-        import xml.etree.ElementTree as ET
-        try:
-            root = ET.fromstring(text)
-            for elem in root.iter():
-                if elem.text and elem.text.strip():
-                    start_attr = elem.get("start")
-                    dur_attr = elem.get("dur")
-                    start_ms = int(float(start_attr) * 1000) if start_attr else 0
-                    end_ms = start_ms + int(float(dur_attr) * 1000) if (start_ms is not None and dur_attr) else start_ms
-                    lines_list.append(elem.text.strip())
-                    segments.append({"start_ms": start_ms, "end_ms": end_ms, "text": elem.text.strip()})
-        except ET.ParseError:
-            pass
-        if lines_list:
-            return "\n".join(lines_list), segments
-
-    # 纯文本兜底
-    for line in text.splitlines():
-        line = line.strip()
-        if not line or line.isdigit():
-            continue
-        if "-->" in line or line.startswith("WEBVTT"):
-            continue
-        if line:
-            lines_list.append(line)
-            segments.append({"start_ms": 0, "end_ms": 0, "text": line})
-
-    return "\n".join(lines_list) if lines_list else None, segments
-
-
-def fetch_subtitles(url: str, run_dir: Path, language: str = "zh", info: dict | None = None) -> tuple[bool, str | None, str | None]:
-    """获取平台字幕，返回 (成功, 字幕文本, 视频标题)"""
-    import yt_dlp
-
-    try:
-        if info is None:
-            info = fetch_video_info(url)
-    except Exception as e:
-        print(f"  ⚠️  获取视频信息失败：{e}")
-        return False, None, None
-
-    title = info.get("title", "video")
-    subtitles = info.get("subtitles", {})
-    auto_captions = info.get("automatic_captions", {})
-
-    lang_priority = ["zh-Hans", "zh", "zh-CN", "en"]
-    for lang in lang_priority:
-        if lang in subtitles and subtitles[lang]:
-            return _download_subtitle(url, subtitles[lang], run_dir, title, "人工字幕")
-        if lang in auto_captions and auto_captions[lang]:
-            return _download_subtitle(url, auto_captions[lang], run_dir, title, "自动字幕")
-
-    for key in list(subtitles.keys()):
-        if key.startswith("zh") or key.startswith("en"):
-            return _download_subtitle(url, subtitles[key], run_dir, title, "人工字幕")
-
-    for key in list(auto_captions.keys()):
-        if key.startswith("zh") or key.startswith("en"):
-            return _download_subtitle(url, auto_captions[key], run_dir, title, "自动字幕")
-
-    return False, None, title
-
-
-# ── 视频下载 ────────────────────────────────────────────────
-
-
-def _bilibili_detect_v_voucher(data: dict) -> bool:
-    """检测 playurl 返回是否为 v_voucher 风控（无真实视频流）。"""
-    if data.get("code") != 0:
-        return False
-    d = data.get("data", {})
-    return "v_voucher" in d and "dash" not in d and "durl" not in d
-
-
-def _bilibili_get_stream_urls_with_cookies(bvid: str, cid: str) -> tuple[str | None, str | None, bool]:
-    """带 buvid cookies 调 playurl。返回 (video_url, audio_url, is_v_voucher)。"""
-    from curl_cffi import requests as cffi_requests
-
-    s = cffi_requests.Session(impersonate="chrome")
-    # 注入 buvid cookies
-    try:
-        fr = s.get("https://api.bilibili.com/x/frontend/finger/spi", timeout=20).json()
-        s.cookies.set("buvid3", fr["data"]["b_3"], domain=".bilibili.com")
-        s.cookies.set("buvid4", fr["data"]["b_4"], domain=".bilibili.com")
-    except Exception:
-        pass
-    s.get(f"https://www.bilibili.com/video/{bvid}", timeout=20)
-
-    resp = s.get(
-        "https://api.bilibili.com/x/player/wbi/playurl",
-        params={"bvid": bvid, "cid": cid, "fnval": 4048, "fnver": 0, "fourk": 1, "qn": 80},
-        timeout=30,
-    )
-    data = resp.json()
-    if _bilibili_detect_v_voucher(data):
-        return None, None, True
-    if data.get("code") != 0:
-        return None, None, False
-    d = data["data"]
-    if "dash" in d:
-        dash = d["dash"]
-        videos = dash.get("video", [])
-        audios = dash.get("audio", [])
-        best_video = max(videos, key=lambda v: v.get("height", 0) * v.get("width", 0)) if videos else None
-        best_audio = audios[0] if audios else None
-        v_url = best_video.get("baseUrl") or best_video.get("base_url") if best_video else None
-        a_url = best_audio.get("baseUrl") or best_audio.get("base_url") if best_audio else None
-        return v_url, a_url, False
-    elif "durl" in d:
-        durls = d["durl"]
-        return (durls[0]["url"] if durls else None), None, False
-    return None, None, False
-
-
-def _load_browser_cookies(browser: str, domain: str = ".bilibili.com") -> dict[str, str]:
-    """从浏览器读取指定 domain 的 cookies。
-
-    browser 可选：chrome, firefox, safari, edge。
-    未安装 browser_cookie3 时返回空字典。
-    """
-    try:
-        import browser_cookie3
-    except ImportError:
-        print("  ⚠️  未安装 browser_cookie3，无法读取浏览器 cookies")
-        return {}
-
-    loaders = {
-        "chrome": browser_cookie3.chrome,
-        "firefox": browser_cookie3.firefox,
-        "safari": browser_cookie3.safari,
-        "edge": browser_cookie3.edge,
-    }
-    loader = loaders.get(browser.lower())
-    if loader is None:
-        print(f"  ⚠️  不支持的浏览器：{browser}，跳过浏览器 cookies")
-        return {}
-
-    try:
-        cj = loader(domain_name=domain)
-        return {c.name: c.value for c in cj}
-    except Exception as e:
-        print(f"  ⚠️  读取 {browser} cookies 失败：{e}")
-        return {}
-
-
-def _bilibili_get_stream_urls_with_browser_cookies(
-    bvid: str, cid: str, browser: str
-) -> tuple[str | None, str | None, bool]:
-    """从浏览器读取登录态 cookies 调 B站 playurl。"""
-    from curl_cffi import requests as cffi_requests
-
-    cookies = _load_browser_cookies(browser)
-    if not cookies:
-        return None, None, False
-
-    s = cffi_requests.Session(impersonate="chrome")
-    for name, value in cookies.items():
-        s.cookies.set(name, value, domain=".bilibili.com")
-
-    s.get(f"https://www.bilibili.com/video/{bvid}", timeout=20)
-
-    resp = s.get(
-        "https://api.bilibili.com/x/player/wbi/playurl",
-        params={"bvid": bvid, "cid": cid, "fnval": 4048, "fnver": 0, "fourk": 1, "qn": 80},
-        timeout=30,
-    )
-    data = resp.json()
-    if _bilibili_detect_v_voucher(data):
-        return None, None, True
-    if data.get("code") != 0:
-        return None, None, False
-
-    d = data["data"]
-    if "dash" in d:
-        dash = d["dash"]
-        videos = dash.get("video", [])
-        audios = dash.get("audio", [])
-        best_video = max(videos, key=lambda v: v.get("height", 0) * v.get("width", 0)) if videos else None
-        best_audio = audios[0] if audios else None
-        v_url = best_video.get("baseUrl") or best_video.get("base_url") if best_video else None
-        a_url = best_audio.get("baseUrl") or best_audio.get("base_url") if best_audio else None
-        return v_url, a_url, False
-    elif "durl" in d:
-        durls = d["durl"]
-        return (durls[0]["url"] if durls else None), None, False
-    return None, None, False
-
-
-def _bilibili_get_stream_urls(bvid: str, cid: str) -> tuple[str | None, str | None]:
-    """通过 curl_cffi 直接调用 B站 playurl API 获取视频/音频流 URL
-    返回 (video_url, audio_url)，DASH 格式分离
-    """
-    from curl_cffi import requests as cffi_requests
-
-    resp = cffi_requests.get(
-        "https://api.bilibili.com/x/player/wbi/playurl",
-        params={"bvid": bvid, "cid": cid, "fnval": 4048, "fnver": 0, "fourk": 1, "qn": 80},
-        impersonate="chrome",
-        timeout=30,
-    )
-    data = resp.json()
-    if data.get("code") != 0:
-        return None, None
-
-    d = data["data"]
-    if "dash" in d:
-        dash = d["dash"]
-        videos = dash.get("video", [])
-        audios = dash.get("audio", [])
-        # 选最高画质的视频
-        best_video = max(videos, key=lambda v: v.get("height", 0) * v.get("width", 0)) if videos else None
-        best_audio = audios[0] if audios else None
-        v_url = best_video.get("baseUrl") or best_video.get("base_url") if best_video else None
-        a_url = best_audio.get("baseUrl") or best_audio.get("base_url") if best_audio else None
-        return v_url, a_url
-    elif "durl" in d:
-        durls = d["durl"]
-        return durls[0]["url"] if durls else None, None
-    return None, None
-
-
-def _bilibili_extract_ids(url: str) -> tuple[str | None, str | None, str | None]:
-    """从 B站 URL 或页面提取 (bvid, cid, title)"""
-    from curl_cffi import requests as cffi_requests
-
-    bvid_match = re.search(r"(BV[a-zA-Z0-9]+)", url)
-    bvid = bvid_match.group(1) if bvid_match else None
-
-    resp = cffi_requests.get(url, impersonate="chrome", timeout=30)
-    if resp.status_code != 200:
-        return bvid, None, None
-
-    cid_match = re.search(r'"cid":(\d+)', resp.text)
-    cid = cid_match.group(1) if cid_match else None
-
-    title_match = re.search(r"<title[^>]*>(.*?)</title>", resp.text, re.DOTALL)
-    title = title_match.group(1).strip() if title_match else None
-    if title:
-        title = re.sub(r"_哔哩哔哩_bilibili$", "", title).strip()
-
-    return bvid, cid, title
-
-
-def _download_stream(url: str, tmp_path: Path, headers: dict) -> None:
-    from curl_cffi import requests as cffi_requests
-    r = cffi_requests.get(url, headers=headers, impersonate="chrome", timeout=120, stream=True)
-    try:
-        with open(tmp_path, "wb") as f:
-            for chunk in r.iter_content(chunk_size=1024 * 256):
-                f.write(chunk)
-    finally:
-        r.close()
-
-
-def _bilibili_download(url: str, run_dir: Path, title: str | None = None,
-                       stream_urls: tuple[str | None, str | None] | None = None) -> Path:
-    """B站视频下载（curl_cffi 绕过 412），支持 DASH 和直链。
-
-    stream_urls: 已获取的 (video_url, audio_url)，避免重复请求 playurl。
-    """
-    from curl_cffi import requests as cffi_requests
-
-    bvid, cid, extracted_title = _bilibili_extract_ids(url)
-    if not bvid or not cid:
-        raise RuntimeError("无法从 B站 URL 提取 bvid/cid")
-
-    # 优先使用传入的标题，否则使用提取的标题
-    title = title or extracted_title or "video"
-    safe_title = _slugify(title)
-
-    print(f"  📺 B站 BVID={bvid} CID={cid} 标题={title}")
-    if stream_urls:
-        v_url, a_url = stream_urls
-    else:
-        v_url, a_url = _bilibili_get_stream_urls(bvid, cid)
-    if not v_url:
-        raise RuntimeError("B站 playurl API 未返回视频流")
-
-    headers = {"Referer": "https://www.bilibili.com", "User-Agent": "Mozilla/5.0"}
-
-    if a_url:
-        # DASH：分别下载视频和音频，合并（并行下载）
-        v_tmp = run_dir / f"_{safe_title}_video_only.m4s"
-        a_tmp = run_dir / f"_{safe_title}_audio_only.m4s"
-        out_path = run_dir / f"{safe_title}.mp4"
-
-        print(f"  ⬇️  并行下载音视频流...")
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            f_video = executor.submit(_download_stream, v_url, v_tmp, headers)
-            f_audio = executor.submit(_download_stream, a_url, a_tmp, headers)
-            f_video.result()
-            f_audio.result()
-
-        print(f"  🔀 合并音视频...")
-        run_cmd(["ffmpeg", "-y", "-i", str(v_tmp), "-i", str(a_tmp),
-                 "-c:v", "copy", "-c:a", "copy", "-movflags", "+faststart",
-                 str(out_path)], timeout=120)
-        v_tmp.unlink(missing_ok=True)
-        a_tmp.unlink(missing_ok=True)
-        return out_path
-    else:
-        # 直链
-        out_path = run_dir / f"{safe_title}.mp4"
-        print(f"  ⬇️  下载视频...")
-        _download_stream(v_url, out_path, headers)
-        return out_path
+    """获取视频信息（标题、字幕列表）：B站有专属实现，其余走通用 yt-dlp。"""
+    adapter = _find_adapter(url)
+    if adapter is not None and hasattr(adapter, "fetch_info"):
+        return adapter.fetch_info(url, proxy)
+    from sources import yt_dlp_source
+    return yt_dlp_source.fetch_info(url, proxy)
+
+
+def fetch_subtitles(url: str, run_dir: Path, language: str = "zh", info: dict | None = None,
+                    proxy: str | None = None) -> tuple[bool, str | None, str | None]:
+    """获取平台字幕，返回 (成功, 字幕文本, 视频标题)。"""
+    adapter = _find_adapter(url)
+    if adapter is not None and hasattr(adapter, "fetch_subtitles"):
+        return adapter.fetch_subtitles(url, run_dir, language, info, proxy)
+    from sources import yt_dlp_source
+    return yt_dlp_source.fetch_subtitles(url, run_dir, language, info, proxy)
 
 
 def download_video(url: str, run_dir: Path, title: str | None = None, proxy: str | None = None,
                     cookies_from_browser: str | None = None) -> Path:
-    """下载视频到 run 目录
+    """下载视频到 run 目录（按 URL 派发：B站策略链 / 通用 yt-dlp）。
 
-    cookies_from_browser: 浏览器 cookies 来源（默认 chrome）；仅对 B站 注入以过风控，
-        非 B站 平台不注入避免回归
+    cookies_from_browser: 浏览器 cookies 来源（默认 None 不注入）；仅对 B站 注入以过风控
     """
-    import yt_dlp
+    adapter = _find_adapter(url)
+    if adapter is not None and hasattr(adapter, "download") and getattr(adapter, "has_subtitles", True):
+        return adapter.download(url, run_dir, title, proxy, cookies_from_browser)
+    from sources import yt_dlp_source
+    return yt_dlp_source.download(url, run_dir, title, proxy, cookies_from_browser)
 
-    def _prefetch_cookies_for_yt_dlp(site_url: str) -> str | None:
-        """用 curl_cffi 先访问目标站点获取指纹 cookies，写入 Netscape cookie 文件供 yt-dlp 使用。"""
-        try:
-            from curl_cffi import requests as cffi_requests
-            s = cffi_requests.Session(impersonate="chrome")
-            s.get(site_url, timeout=15)
-            if not s.cookies:
-                return None
-            cookie_file = run_dir / "_prefetched.cookies"
-            with open(cookie_file, "w") as f:
-                f.write("# Netscape HTTP Cookie File\n")
-                for c in s.cookies:
-                    secure = "TRUE" if getattr(c, "secure", False) else "FALSE"
-                    domain = getattr(c, "domain", "") or ".douyin.com"
-                    path = getattr(c, "path", "/") or "/"
-                    expires = str(int(getattr(c, "expires", 0)) or 0)
-                    f.write(f"{domain}\tTRUE\t{path}\t{secure}\t{expires}\t{c.name}\t{c.value}\n")
-            return str(cookie_file)
-        except Exception:
-            return None
 
-    # B站优先使用 curl_cffi 绕过 412
-    if _is_bilibili_url(url):
-        try:
-            from curl_cffi import requests as _  # noqa: F401
-            print("  ⬇️  下载视频（curl_cffi 模式，策略1：buvid cookies）...")
-            bvid, cid, _ = _bilibili_extract_ids(url)
-            v_url, a_url, is_v_voucher = _bilibili_get_stream_urls_with_cookies(bvid, cid)
-            if is_v_voucher:
-                print("  ⚠️  B站 v_voucher 风控，未登录态无法获取视频流")
-                if cookies_from_browser:
-                    print(f"  💡  策略2：使用 {cookies_from_browser} 浏览器 cookies 重试...")
-                    v_url2, a_url2, is_v2 = _bilibili_get_stream_urls_with_browser_cookies(bvid, cid, cookies_from_browser)
-                    if not is_v2 and v_url2:
-                        return _bilibili_download(url, run_dir, title, stream_urls=(v_url2, a_url2))
-                    print(f"  ⚠️  curl_cffi 带cookies仍触发v_voucher，回退到 yt-dlp（使用浏览器cookies）...")
-                else:
-                    print("  ❌  该视频触发B站风控，需登录态。回退到 yt-dlp 尝试...")
-            if v_url and not is_v_voucher:
-                # 复用已获取的流 URL，不再重复请求 playurl
-                return _bilibili_download(url, run_dir, title, stream_urls=(v_url, a_url))
-            print("  ⚠️  curl_cffi 未获取视频流，回退到 yt-dlp...")
-        except Exception as e:
-            print(f"  ⚠️  curl_cffi 下载失败（{e}），回退到 yt-dlp...")
-
-    # 与 curl_cffi 分支命名一致，避免 video-to-slides 找不到文件
-    safe_title = _slugify(title or "video")
-    print(f"  ⬇️  下载视频（yt-dlp）...")
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "format": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-        "outtmpl": str(run_dir / f"{safe_title}.%(ext)s"),
-        "merge_output_format": "mp4",
-    }
-    if proxy:
-        ydl_opts["proxy"] = proxy
-    if cookies_from_browser:
-        ydl_opts["cookiesfrombrowser"] = (cookies_from_browser,)
-    if not _is_bilibili_url(url):
-        prefetched = _prefetch_cookies_for_yt_dlp("https://www.douyin.com/" if "douyin" in url else ("https://www.xiaohongshu.com/" if "xiaohongshu" in url or "xhslink" in url else None))
-        if prefetched:
-            if "cookiefile" in ydl_opts:
-                pass
-            else:
-                ydl_opts["cookiefile"] = prefetched
-
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        ydl.download([url])
-
-    for ext in ["mp4", "webm", "mkv", "mov"]:
-        candidate = run_dir / f"{safe_title}.{ext}"
-        if candidate.exists():
-            if ext != "mp4":
-                mp4_path = run_dir / f"{safe_title}.mp4"
-                candidate.rename(mp4_path)
-                return mp4_path
-            return candidate
-
-    raise RuntimeError("视频下载后找不到文件")
+# 兼容旧测试/外部调用：直接暴露 B站内部实现与字幕解析（真身在 sources/ 下；
+# video-to-slides 等跨技能调用方以 vs_process._parse_subtitle_file 引用，勿删）
+try:
+    from sources.bilibili import (  # noqa: F401
+        _bilibili_detect_v_voucher,
+        _bilibili_get_stream_urls_with_cookies,
+        _load_browser_cookies,
+        _bilibili_get_stream_urls_with_browser_cookies,
+        _bilibili_get_stream_urls,
+        _bilibili_extract_ids,
+        _download_stream,
+        _bilibili_download,
+    )
+    from sources.yt_dlp_source import _parse_subtitle_file  # noqa: F401
+except ImportError:
+    pass
 
 
 # ── 音频提取 ────────────────────────────────────────────────
@@ -977,11 +496,14 @@ def _finish_run(run_dir: Path, title: str, ts: str,
 def cmd_process(args: argparse.Namespace) -> None:
     """主流程：URL/本地路径 → 字幕优先 → ASR fallback → 输出"""
     user_input = args.input
-    douyin_source = _load_douyin_source()
+    douyin_source = _get_douyin_adapter()
     if douyin_source is not None:
         # 支持包裹文本（如"看这个 https://v.douyin.com/xxx"）：提取规整 URL；本地路径原样返回
         user_input = douyin_source.normalize_url(user_input)
     is_url = _is_url(user_input)
+    if is_url:
+        # 站点代理映射（VIDEO_SUMMARY_PROXY_MAP）：按域名自动选代理，命令行 --proxy 优先
+        args.proxy = _get_proxy_for_url(user_input, args.proxy)
 
     if douyin_source is None and "douyin.com" in user_input:
         print("❌ 缺少抖音适配器或 playwright：pip install playwright && python -m playwright install chromium",
@@ -1002,6 +524,10 @@ def cmd_process(args: argparse.Namespace) -> None:
         print(f"🔗 {user_input}")
         try:
             meta = douyin_source.probe(user_input, headless=not getattr(args, "douyin_headful", False))
+        except ImportError as e:
+            print("❌ 缺少 playwright 依赖：pip install playwright && python -m playwright install chromium",
+                  file=sys.stderr)
+            raise SystemExit(2) from e
         except (ValueError, RuntimeError) as e:
             print(f"❌ 抖音解析失败：{e}", file=sys.stderr)
             raise SystemExit(2) from e
@@ -1051,7 +577,7 @@ def cmd_process(args: argparse.Namespace) -> None:
         print(f"📝 视频标题：{title}")
 
         print("\n🔤 尝试获取平台字幕...")
-        has_subtitle, subtitle_text, fetched_title = fetch_subtitles(user_input, run_dir, args.language, info=video_info)
+        has_subtitle, subtitle_text, fetched_title = fetch_subtitles(user_input, run_dir, args.language, info=video_info, proxy=args.proxy)
 
         if fetched_title:
             title = fetched_title
@@ -1108,9 +634,9 @@ def _build_arg_parser():
     parser.add_argument("--proxy", default=None, help="代理地址")
     parser.add_argument("--cleanup", default=None, choices=["all", "transcript-only"], help="清理模式")
     parser.add_argument("--no-subtitle", action="store_true", help="跳过字幕，强制使用 ASR")
-    parser.add_argument("--cookies-from-browser", default="chrome",
+    parser.add_argument("--cookies-from-browser", default=None,
                         choices=["chrome", "firefox", "safari", "edge"],
-                        help="浏览器 cookies 来源（默认 chrome，B 站风控需登录态）")
+                        help="浏览器 cookies 来源（B 站风控需登录态时显式传入；不传则所有平台不注入）")
     parser.add_argument("--douyin-headful", action="store_true",
                         help="抖音下载强制有头浏览器（默认无头优先，失败自动转有头）")
     return parser
