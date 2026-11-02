@@ -27,10 +27,13 @@ import time
 from pathlib import Path
 from urllib.parse import urlparse
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from base import SourceVideo, normalize_url, source_cli_main  # noqa: E402
+try:
+    from .base import SourceVideo, normalize_url, source_cli_main
+except ImportError:  # 独立 CLI 直跑时（python sources/douyin.py）无包上下文
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from base import SourceVideo, normalize_url, source_cli_main  # noqa: E402
 
-DOUYIN_HOSTS = ("www.douyin.com", "v.douyin.com", "iesdouyin.com")
+DOUYIN_DOMAINS = ("douyin.com", "iesdouyin.com")
 UNSUPPORTED_PATTERNS = (
     ("/note/", "图集（note）暂不支持，请提供视频链接 douyin.com/video/<id>"),
     ("/slides/", "合集（slides）暂不支持，请提供单视频链接"),
@@ -50,7 +53,9 @@ LAUNCH_ARGS = ["--disable-blink-features=AutomationControlled"]
 
 def matches(url: str) -> bool:
     host = urlparse(url).netloc.lower()
-    return any(host == h or host.endswith("." + h) for h in DOUYIN_HOSTS)
+    # 含裸域：用户粘贴 douyin.com/video/<id>（无 www）也必须命中，否则会静默
+    # 落入 yt-dlp 通用路径——而该路径对抖音已被风控 403
+    return any(host == d or host.endswith("." + d) for d in DOUYIN_DOMAINS)
 
 
 def _parse_video_id(url: str) -> str | None:

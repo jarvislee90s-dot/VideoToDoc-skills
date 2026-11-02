@@ -34,10 +34,15 @@ class SourceVideo:
 
 
 def normalize_url(url: str) -> str:
-    """去掉首尾空白与包裹文本，返回纯 URL。"""
+    """去掉首尾空白与包裹文本，返回纯 URL。紧贴 URL 的中文视为分享文本尾巴，一并剥离。"""
     url = url.strip().strip('"\'')
     m = re.search(r"https?://\S+", url)
-    return m.group(0).rstrip("，。,.;；") if m else url
+    if not m:
+        return url
+    matched = m.group(0)
+    # 抖音 URL 本身不含中文；尾部 CJK/中文标点按"用户粘贴文本粘连"处理
+    matched = re.sub(r"[\u4e00-\u9fff\u3000-\u303f\uff01-\uff5e\u2018-\u201d,.;：；！？，。]+$", "", matched)
+    return matched
 
 
 def is_short_link(url: str) -> bool:
