@@ -4,6 +4,30 @@ VideoToDoc 是一个面向课程、讲座、培训视频的本地工作流：提
 
 项目提供 Claude Code Skill 源文件，让 Agent 可以通过自然语言触发完整流程。
 
+## 🌐 平台支持（源适配器架构）
+
+平台下载逻辑按源拆分在 `video-summary/scripts/sources/`，`process.py` 统一派发；某平台风控策略变化时只需改对应模块：
+
+| 平台 | 形态 | 说明 |
+|------|------|------|
+| 抖音 | 独立下载器 | Playwright 打开视频页拦截 detail API（yt-dlp 静态签名已被风控 403）；取音视频合流直链纯 HTTP 下载；支持 `/video/<id>`、`v.douyin.com` 短链、`?modal_id=` 弹窗链接 |
+| B站 | yt-dlp 系 | curl_cffi buvid → 浏览器 cookies → yt-dlp 三级策略链；⚠️ 2026-11 起匿名下载全面触发 v_voucher，需登录态（`--cookies-from-browser chrome`，且浏览器需关闭） |
+| YouTube | yt-dlp 系 | 标准流水线；需代理（`--proxy` 或 `VIDEO_SUMMARY_PROXY_MAP` 站点映射） |
+| 其他（小红书等） | 通用兜底 | yt-dlp + 站点 cookie 预取 |
+
+新增平台 = 往 `sources/` 加一个实现契约的模块 + 注册表加一个名字，详见 `sources/base.py` 契约文档。
+
+### 抖音登录态
+
+```bash
+# 首次运行自动弹出有头浏览器扫码（抖音APP 扫一扫），登录态存独立 profile 复用；
+# 平时无头运行，失败自动升级有头。也可单独触发登录：
+python3 .agents/skills/video-summary/scripts/sources/douyin.py "<任意抖音URL>" --login
+```
+
+- Profile 位置：`%LOCALAPPDATA%\VideoSkills\douyin-profile`（环境变量 `VIDEO_SUMMARY_DOUYIN_PROFILE` 可覆盖）
+- 注意同一 profile 不支持并行跑多个抖音任务
+
 ---
 
 ## 🎓 项目概览
@@ -48,8 +72,14 @@ python3 .agents/skills/feishu-markdown-publish/scripts/publish.py 讲义.md
 │   ├── README.md           # 使用说明
 │   ├── signal_stats.py     # 结构形态信号统计（非决策提示）
 │   └── scripts/
-│       ├── process.py      # 视频下载 + ASR + 摘要
-│       └── prepare_merge.py # 合并输入清单 + 原型分段策略（--archetype）
+│       ├── process.py      # 统一编排：平台派发 + 字幕优先 + ASR + 摘要
+│       ├── prepare_merge.py # 合并输入清单 + 原型分段策略（--archetype）
+│       └── sources/        # 视频源适配器（每平台一个模块，风控变化只改对应源）
+│           ├── base.py           # 双形态契约 + 工具
+│           ├── douyin.py         # 抖音：Playwright 拦截 detail API
+│           ├── bilibili.py       # B站：curl_cffi 三级策略链
+│           ├── youtube.py        # YouTube：薄封装
+│           └── yt_dlp_source.py  # 通用 yt-dlp 兜底
 ├── video-to-slides/
 │   ├── SKILL.md
 │   ├── README.md
@@ -94,6 +124,9 @@ python3 .agents/skills/video-summary/scripts/prepare_merge.py \
 ```bash
 # ASR：Apple Silicon 装 mlx-whisper；Windows/Linux 装 faster-whisper（任一即可，脚本自动探测）
 pip install mlx-whisper python-docx Pillow curl_cffi yt-dlp opencv-python numpy rapidocr
+
+# 抖音源需要 Playwright（其他平台不需要）
+pip install playwright && python -m playwright install chromium
 
 # 思维导图渲染需要 mermaid-cli（必须 >= 11.4.0 才内置 tidy-tree 鱼骨布局插件，旧版本会静默回退为放射状布局）
 npm install -g "@mermaid-js/mermaid-cli@>=11.4.0"

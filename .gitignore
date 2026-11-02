@@ -34,3 +34,8 @@ tmp/
 # 根目录临时文件（其他 Agent / 工具遗留，非项目跟踪内容）
 /bugfix_plan.md
 /rite_zhengli.py
+
+# 过程产物（源适配器新增）
+*.part
+_prefetched.cookies
+douyin-profile/
