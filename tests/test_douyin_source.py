@@ -56,6 +56,22 @@ def test_parse_video_id_returns_none_for_url_without_video_id():
     assert douyin_source._parse_video_id(f"https://www.douyin.com/video/{VIDEO_ID_19[:3]}") is None
 
 
+def test_parse_video_id_extracts_modal_id_from_jingxuan_page():
+    # 精选页弹窗形态：modal_id 即视频 ID
+    url = "https://www.douyin.com/jingxuan?modal_id=7674964686676282662"
+    assert douyin_source._parse_video_id(url) == "7674964686676282662"
+
+
+def test_parse_video_id_extracts_modal_id_when_mid_query_string():
+    # 搜索页弹窗：modal_id 带有尾随参数（&type=video），仍应正确提取
+    url = "https://www.douyin.com/search/关键词?modal_id=7123456789012345678&type=video"
+    assert douyin_source._parse_video_id(url) == VIDEO_ID_19
+
+
+def test_parse_video_id_returns_none_when_jingxuan_page_has_no_modal_id():
+    assert douyin_source._parse_video_id("https://www.douyin.com/jingxuan?from_nav=1") is None
+
+
 # ── check_supported：不支持类型明确报错，正常视频链接通过 ─────────
 
 

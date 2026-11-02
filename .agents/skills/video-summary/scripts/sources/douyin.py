@@ -60,6 +60,10 @@ def matches(url: str) -> bool:
 
 def _parse_video_id(url: str) -> str | None:
     m = re.search(r"/video/(\d{15,20})", url)
+    if m:
+        return m.group(1)
+    # 精选/搜索页的弹窗形态：douyin.com/jingxuan?modal_id=<id>
+    m = re.search(r"[?&]modal_id=(\d{15,20})", url)
     return m.group(1) if m else None
 
 
